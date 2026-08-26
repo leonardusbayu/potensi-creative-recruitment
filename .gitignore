@@ -1,0 +1,30 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# Environment & secrets
+.dev.vars
+.env
+.env.local
+*.pem
+*.key
+
+# Wrangler / Cloudflare
+.wrangler/
+.dev.vars.local
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+
+# Local tooling state
+.codex/
+.sisyphus/

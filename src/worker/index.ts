@@ -1,0 +1,696 @@
+import { Hono } from "hono";
+import { cors } from "hono/cors";
+import { logger } from "hono/logger";
+import { analyzeCvText } from "./cvAnalyzer";
+import { analyzeWithLlm, analyzeWithFallback } from "./llm";
+import { buildInviteEmail, buildRejectionEmail } from "./email";
+import { publishToMeta } from "./meta";
+import { publishToTikTok } from "./tiktok";
+
+type Bindings = {
+  DB: any;
+  CV_BUCKET: any;
+  CV_QUEUE: any;
+  AI: any;
+  POSTIZ_URL: string;
+  APP_URL: string;
+  JWT_SECRET: string;
+  ADMIN_TOKEN: string;
+  RESEND_API_KEY?: string;
+  EMAIL_FROM?: string;
+  OPENROUTER_API_KEY?: string;
+  LLM_MODEL?: string;
+};
+
+type MessageBatch<T> = { messages: { body: T; ack(): void; retry(): void }[] };
+
+function sanitizeFileName(name: string): string {
+  return name.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 80);
+}
+
+function isValidEmail(email: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}
+
+function isAllowedPostizUrl(url: string): boolean {
+  try {
+    const u = new URL(url);
+    return u.protocol === "http:" || u.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+function requireAdmin(adminToken: string, authorization: string | undefined): boolean {
+  return !!adminToken && authorization === `Bearer ${adminToken}`;
+}
+
+async function signJwt(payload: object, secret: string): Promise<string> {
+  const header = btoa(JSON.stringify({ alg: "HS256", typ: "JWT" })).replace(/=+$/, "");
+  const body = btoa(JSON.stringify(payload)).replace(/=+$/, "");
+  const data = `${header}.${body}`;
+  const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  const sig = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(data));
+  const sigB64 = btoa(String.fromCharCode(...new Uint8Array(sig))).replace(/=+$/, "").replace(/\+/g, "-").replace(/\//g, "_");
+  return `${data}.${sigB64}`;
+}
+
+async function verifyJwt(token: string, secret: string): Promise<any | null> {
+  const parts = token.split(".");
+  if (parts.length !== 3) return null;
+  const [header, body, sig] = parts;
+  const data = `${header}.${body}`;
+  const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["verify"]);
+  const sigBytes = Uint8Array.from(atob(sig.replace(/-/g, "+").replace(/_/g, "/")), (c) => c.charCodeAt(0));
+  const valid = await crypto.subtle.verify("HMAC", key, sigBytes, new TextEncoder().encode(data));
+  if (!valid) return null;
+  try {
+    const payload = JSON.parse(atob(body));
+    if (payload.exp && payload.exp < Date.now()) return null;
+    return payload;
+  } catch {
+    return null;
+  }
+}
+
+async function getSetting(env: Bindings, key: string): Promise<string | undefined> {
+  try {
+    const row = (await env.DB.prepare("SELECT value FROM settings WHERE key = ?").bind(key).first()) as any;
+    return row?.value;
+  } catch {
+    return undefined;
+  }
+}
+
+async function sendEmail(env: Bindings, to: string, subject: string, html: string): Promise<boolean> {
+  if (!env.RESEND_API_KEY || !env.EMAIL_FROM) return false;
+  try {
+    const r = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${env.RESEND_API_KEY}` },
+      body: JSON.stringify({ from: env.EMAIL_FROM, to, subject, html }),
+    });
+    return r.ok;
+  } catch {
+    return false;
+  }
+}
+
+const app = new Hono<{ Bindings: Bindings }>();
+
+app.use("*", cors({ origin: (origin, c) => c.env.APP_URL ?? origin, credentials: true }));
+app.use("*", logger());
+
+app.get("/api/health", (c) => c.json({ ok: true, service: "calendarjet-hr" }));
+
+app.get("/api/jobs", async (c) => {
+  const { results } = await c.env.DB.prepare("SELECT * FROM jobs ORDER BY created_at DESC").all();
+  return c.json({ jobs: results });
+});
+
+app.post("/api/jobs", async (c) => {
+  if (!requireAdmin(c.env.ADMIN_TOKEN, c.req.header("authorization"))) return c.json({ error: "unauthorized" }, 401);
+  const body = await c.req.json<{ title: string; description?: string; criteria?: unknown; slug?: string }>();
+  if (!body.title || body.title.trim().length < 3) return c.json({ error: "title min 3 chars" }, 400);
+  const id = `job_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+  const slug = body.slug ?? body.title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") + "-" + Date.now().toString(36).slice(2, 6);
+  await c.env.DB.prepare(
+    "INSERT INTO jobs (id, slug, title, description, criteria, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)"
+  )
+    .bind(id, slug, body.title.trim(), (body.description ?? "").slice(0, 2000), JSON.stringify(body.criteria ?? {}), "published", new Date().toISOString())
+    .run();
+  return c.json({ id, slug });
+});
+
+app.get("/api/social/accounts", async (c) => {
+  if (!requireAdmin(c.env.ADMIN_TOKEN, c.req.header("authorization"))) return c.json({ error: "unauthorized" }, 401);
+  const { results } = await c.env.DB.prepare("SELECT * FROM social_accounts ORDER BY created_at DESC").all();
+  return c.json({ accounts: results });
+});
+
+app.post("/api/social/accounts", async (c) => {
+  if (!requireAdmin(c.env.ADMIN_TOKEN, c.req.header("authorization"))) return c.json({ error: "unauthorized" }, 401);
+  const b = await c.req.json<{ platform: string; username: string; displayName?: string; accessToken?: string; pageId?: string; openId?: string }>();
+  if (!b.platform || !b.username) return c.json({ error: "platform + username required" }, 400);
+  const id = `acct_${Date.now()}_${Math.random().toString(36).slice(2, 5)}`;
+  await c.env.DB.prepare(
+    "INSERT INTO social_accounts (id, platform, username, display_name, access_token, page_id, open_id, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+  )
+    .bind(id, b.platform, b.username.trim(), b.displayName || b.username.trim(), b.accessToken || "", b.pageId || "", b.openId || "", b.accessToken ? "connected" : "manual", new Date().toISOString())
+    .run();
+  return c.json({ id });
+});
+
+app.delete("/api/social/accounts/:id", async (c) => {
+  if (!requireAdmin(c.env.ADMIN_TOKEN, c.req.header("authorization"))) return c.json({ error: "unauthorized" }, 401);
+  await c.env.DB.prepare("DELETE FROM social_accounts WHERE id = ?").bind(c.req.param("id")).run();
+  return c.json({ ok: true });
+});
+
+app.get("/api/social/posts", async (c) => {
+  if (!requireAdmin(c.env.ADMIN_TOKEN, c.req.header("authorization"))) return c.json({ error: "unauthorized" }, 401);
+  const { results } = await c.env.DB.prepare("SELECT * FROM social_posts ORDER BY scheduled_at DESC LIMIT 200").all();
+  return c.json({ posts: results });
+});
+
+app.post("/api/social/posts", async (c) => {
+  if (!requireAdmin(c.env.ADMIN_TOKEN, c.req.header("authorization"))) return c.json({ error: "unauthorized" }, 401);
+  const b = await c.req.json<{ caption: string; platforms?: string[]; accountIds?: string[]; scheduledAt?: string; media?: string[]; jobSlug?: string }>();
+  if (!b.caption || typeof b.caption !== "string" || b.caption.length > 5000) return c.json({ error: "caption required max 5000" }, 400);
+  const id = `sp_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+  const scheduledAt = b.scheduledAt ? new Date(b.scheduledAt).toISOString() : new Date().toISOString();
+  await c.env.DB.prepare(
+    "INSERT INTO social_posts (id, caption, platforms, account_ids, job_slug, media, scheduled_at, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, 'scheduled', ?)"
+  )
+    .bind(id, b.caption, JSON.stringify(b.platforms || []), JSON.stringify(b.accountIds || []), b.jobSlug || "", JSON.stringify(b.media || []), scheduledAt, new Date().toISOString())
+    .run();
+  return c.json({ id });
+});
+
+app.post("/api/social/posts/:id/cancel", async (c) => {
+  if (!requireAdmin(c.env.ADMIN_TOKEN, c.req.header("authorization"))) return c.json({ error: "unauthorized" }, 401);
+  const id = c.req.param("id");
+  const row = (await c.env.DB.prepare("SELECT id FROM social_posts WHERE id = ?").bind(id).first()) as any;
+  if (!row) return c.json({ error: "not found" }, 404);
+  await c.env.DB.prepare("UPDATE social_posts SET status = 'cancelled' WHERE id = ?").bind(id).run();
+  return c.json({ ok: true, id, status: "cancelled" });
+});
+
+app.post("/api/social/posts/:id/publish", async (c) => {
+  if (!requireAdmin(c.env.ADMIN_TOKEN, c.req.header("authorization"))) return c.json({ error: "unauthorized" }, 401);
+  const id = c.req.param("id");
+  const post = (await c.env.DB.prepare("SELECT * FROM social_posts WHERE id = ?").bind(id).first()) as any;
+  if (!post) return c.json({ error: "not found" }, 404);
+  const accounts = (await c.env.DB.prepare("SELECT * FROM social_accounts").all()).results as any[];
+  const res = await publishPost(c.env, post, accounts);
+  const status = res.ok ? "published" : "failed";
+  await c.env.DB.prepare("UPDATE social_posts SET status = ?, published_at = ?, error = ?, post_ids = ? WHERE id = ?")
+    .bind(status, res.ok ? new Date().toISOString() : null, res.error || null, JSON.stringify(res.postIds || {}), id)
+    .run();
+  return c.json({ ok: res.ok, status, error: res.error, postIds: res.postIds });
+});
+
+app.post("/api/social/upload", async (c) => {
+  if (!requireAdmin(c.env.ADMIN_TOKEN, c.req.header("authorization"))) return c.json({ error: "unauthorized" }, 401);
+  const form = await c.req.formData();
+  const file = form.get("media") as File | null;
+  if (!file) return c.json({ error: "media required" }, 400);
+  if (file.size > 5 * 1024 * 1024) return c.json({ error: "media max 5MB" }, 413);
+  if (!/^image\/(png|jpe?g|webp|gif)$/.test(file.type)) return c.json({ error: "image must be png/jpeg/webp/gif" }, 400);
+  const id = `m_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+  const r2Key = `media/${id}-${sanitizeFileName(file.name)}`;
+  await c.env.CV_BUCKET.put(r2Key, await file.arrayBuffer(), { httpMetadata: { contentType: file.type } });
+  const url = `${c.env.APP_URL}/api/media/${r2Key.split("/")[1]}`;
+  return c.json({ url, key: r2Key });
+});
+
+app.get("/api/media/:key", async (c) => {
+  const key = c.req.param("key");
+  const obj = await c.env.CV_BUCKET.get(`media/${key}`);
+  if (!obj) return c.json({ error: "not found" }, 404);
+  return c.body(obj.body as any, { headers: { "content-type": obj.httpMetadata?.contentType || "image/png" } });
+});
+
+async function publishPost(env: Bindings, post: any, accounts: any[]): Promise<{ ok: boolean; error?: string; postIds?: Record<string, string> }> {
+  const mediaUrls = JSON.parse(post.media || "[]");
+  const accountIds: string[] = JSON.parse(post.account_ids || "[]");
+  const targets = accounts.filter((a) => accountIds.includes(a.id) && a.access_token && (["facebook", "instagram", "threads"].includes(a.platform) || (a.platform === "tiktok" && a.open_id)));
+  if (targets.length === 0) return { ok: false, error: "no connected account with valid token for this post" };
+  const postIds: Record<string, string> = {};
+  let firstError: string | undefined;
+  for (const acc of targets) {
+    let r: any;
+    if (acc.platform === "tiktok") {
+      r = await publishToTikTok({ token: acc.access_token, openId: acc.open_id || "" }, post.caption, mediaUrls);
+    } else {
+      r = await publishToMeta({ token: acc.access_token, platform: acc.platform, pageId: acc.page_id || "" }, post.caption, mediaUrls);
+    }
+    if (r.ok) postIds[acc.platform] = r.postId;
+    else firstError = firstError || r.error;
+  }
+  return { ok: Object.keys(postIds).length > 0, error: firstError, postIds };
+}
+
+app.post("/api/social/publish", async (c) => {
+  if (!requireAdmin(c.env.ADMIN_TOKEN, c.req.header("authorization"))) return c.json({ error: "unauthorized" }, 401);
+  const body = await c.req.json<{ caption: string; account: { token: string; platform: string; pageId: string; openId?: string }; mediaUrls: string[] }>();
+  if (!body.caption || !body.account?.token) return c.json({ error: "caption + account.token required" }, 400);
+  let res;
+  if (body.account.platform === "tiktok") {
+    res = await publishToTikTok({ token: body.account.token, openId: body.account.openId || "" }, body.caption, body.mediaUrls ?? []);
+  } else {
+    res = await publishToMeta(body.account, body.caption, body.mediaUrls ?? []);
+  }
+  return c.json(res, res.ok ? 200 : 400);
+});
+
+app.post("/api/apply", async (c) => {
+  const form = await c.req.formData();
+  const file = form.get("cv") as File | null;
+  const jobId = String(form.get("jobId") ?? "").trim();
+  const name = String(form.get("name") ?? "").trim();
+  const email = String(form.get("email") ?? "").trim().toLowerCase();
+  const wa = String(form.get("wa") ?? "").trim().slice(0, 20);
+  const tiktok = String(form.get("tiktok") ?? "").trim().slice(0, 50);
+  const ig = String(form.get("ig") ?? "").trim().slice(0, 50);
+
+  const ip = c.req.header("cf-connecting-ip") || "unknown";
+  const rlKey = `apply:${ip}`;
+  const now = new Date().toISOString();
+  const windowStart = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+  const rl = (await c.env.DB.prepare("SELECT count, window_start FROM rate_limits WHERE key = ?").bind(rlKey).first()) as any;
+  if (rl && rl.window_start > windowStart) {
+    if (rl.count >= 10) return c.json({ error: "too many applications, try later" }, 429);
+    await c.env.DB.prepare("UPDATE rate_limits SET count = count + 1 WHERE key = ?").bind(rlKey).run();
+  } else {
+    await c.env.DB.prepare("INSERT INTO rate_limits (key, count, window_start) VALUES (?, 1, ?) ON CONFLICT(key) DO UPDATE SET count = 1, window_start = ?")
+      .bind(rlKey, now, now)
+      .run();
+  }
+
+  if (!file || !jobId || !email || !name) return c.json({ error: "cv, jobId, email, name required" }, 400);
+  if (!isValidEmail(email)) return c.json({ error: "invalid email" }, 400);
+  if (file.size > 10 * 1024 * 1024) return c.json({ error: "CV max 10MB" }, 413);
+  if (!/^(application\/pdf|application\/msword|application\/vnd\.openxmlformats)/.test(file.type) && !file.name.match(/\.(pdf|docx?)$/i)) {
+    return c.json({ error: "CV must be PDF/DOCX" }, 400);
+  }
+  if (name.length < 2) return c.json({ error: "name min 2 chars" }, 400);
+
+  const existing = (await c.env.DB.prepare("SELECT id FROM applicants WHERE job_id = ? AND email = ?").bind(jobId, email).first()) as any;
+  if (existing) return c.json({ error: "duplicate application for this job", existingId: existing.id }, 409);
+  const crossJob = (await c.env.DB.prepare("SELECT id, job_id FROM applicants WHERE email = ? AND status != 'rejected' LIMIT 1").bind(email).first()) as any;
+  if (crossJob) return c.json({ error: "already applied to another active job", existingId: crossJob.id, existingJobId: crossJob.job_id }, 409);
+
+  const jobExists = (await c.env.DB.prepare("SELECT id FROM jobs WHERE id = ?").bind(jobId).first()) as any;
+  if (!jobExists) return c.json({ error: "job not found" }, 404);
+
+  const applicantId = `app_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+  const safeName = sanitizeFileName(file.name);
+  const r2Key = `cv/${applicantId}-${safeName}`;
+  await c.env.CV_BUCKET.put(r2Key, await file.arrayBuffer(), {
+    httpMetadata: { contentType: file.type || "application/pdf" },
+  });
+
+  const cvText = (await file.text()).slice(0, 20000);
+
+  await c.env.DB.prepare(
+    "INSERT INTO applicants (id, job_id, name, email, wa, tiktok, ig, cv_r2_key, cv_text, status, applied_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+  )
+    .bind(applicantId, jobId, name, email, wa, tiktok, ig, r2Key, cvText, "pending", new Date().toISOString())
+    .run();
+
+  try {
+    await c.env.CV_QUEUE.send({ applicantId, jobId });
+  } catch {}
+
+  return c.json({ applicantId, status: "pending" });
+});
+
+app.get("/api/applicants", async (c) => {
+  if (!requireAdmin(c.env.ADMIN_TOKEN, c.req.header("authorization"))) return c.json({ error: "unauthorized" }, 401);
+  const jobId = c.req.query("jobId");
+  const status = c.req.query("status");
+  const limit = Math.min(100, Math.max(1, Number(c.req.query("limit") ?? 50)));
+  const offset = Math.max(0, Number(c.req.query("offset") ?? 0));
+  let q = "SELECT * FROM applicants WHERE 1=1";
+  const params: unknown[] = [];
+  if (jobId) {
+    q += " AND job_id = ?";
+    params.push(jobId);
+  }
+  if (status) {
+    q += " AND status = ?";
+    params.push(status);
+  }
+  q += " ORDER BY applied_at DESC LIMIT ? OFFSET ?";
+  params.push(limit, offset);
+  const stmt = c.env.DB.prepare(q).bind(...params);
+  const { results } = await stmt.all();
+  return c.json({ applicants: results, limit, offset });
+});
+
+app.get("/api/cv/:applicantId", async (c) => {
+  if (!requireAdmin(c.env.ADMIN_TOKEN, c.req.header("authorization"))) return c.json({ error: "unauthorized" }, 401);
+  const id = c.req.param("applicantId");
+  const { results } = await c.env.DB.prepare("SELECT * FROM cv_analyses WHERE applicant_id = ? ORDER BY created_at DESC").bind(id).all();
+  return c.json({ analyses: results });
+});
+
+app.get("/api/cv/:applicantId/file", async (c) => {
+  if (!requireAdmin(c.env.ADMIN_TOKEN, c.req.header("authorization"))) return c.json({ error: "unauthorized" }, 401);
+  const id = c.req.param("applicantId");
+  const row = (await c.env.DB.prepare("SELECT cv_r2_key FROM applicants WHERE id = ?").bind(id).first()) as any;
+  if (!row?.cv_r2_key) return c.json({ error: "no CV file" }, 404);
+  const obj = await c.env.CV_BUCKET.get(row.cv_r2_key);
+  if (!obj) return c.json({ error: "CV not found" }, 404);
+  return c.body(obj.body as any, { headers: { "content-type": obj.httpMetadata?.contentType || "application/pdf", "content-disposition": `inline; filename="cv-${id}.pdf"` } });
+});
+
+app.post("/api/cv/analyze/:applicantId", async (c) => {
+  if (!requireAdmin(c.env.ADMIN_TOKEN, c.req.header("authorization"))) return c.json({ error: "unauthorized" }, 401);
+  const applicantId = c.req.param("applicantId");
+  const row = (await c.env.DB.prepare("SELECT * FROM applicants WHERE id = ?").bind(applicantId).first()) as any;
+  if (!row) return c.json({ error: "not found" }, 404);
+  const job = (await c.env.DB.prepare("SELECT criteria FROM jobs WHERE id = ?").bind(row.job_id).first()) as any;
+  const criteria = job?.criteria ? JSON.parse(job.criteria) : {};
+  const start = Date.now();
+  const savedModel = await getSetting(c.env, "llm_model");
+  const modelName = savedModel || c.env.LLM_MODEL;
+  const llmResult = await analyzeWithLlm({ apiKey: c.env.OPENROUTER_API_KEY, model: modelName, cvText: row.cv_text ?? "", criteria, tiktok: row.tiktok, ig: row.ig });
+  const result = llmResult || analyzeWithFallback(row.cv_text ?? "", { criteria, tiktok: row.tiktok, ig: row.ig });
+  const model = llmResult ? (modelName || "openrouter") : "heuristic-fallback";
+  const analysisId = `ana_${Date.now()}_${Math.random().toString(36).slice(2, 5)}`;
+  await c.env.DB.prepare(
+    "INSERT INTO cv_analyses (id, applicant_id, parsed, score, missing_skills, strengths, decision, model, duration_ms, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+  )
+    .bind(
+      analysisId,
+      applicantId,
+      JSON.stringify(result.parsed),
+      JSON.stringify(result.score),
+      JSON.stringify(result.missingSkills),
+      JSON.stringify(result.strengths),
+      result.decision,
+      model,
+      Date.now() - start,
+      new Date().toISOString()
+    )
+    .run();
+  await c.env.DB.prepare("UPDATE applicants SET status = ?, score = ?, ai_summary = ? WHERE id = ?")
+    .bind("analyzed", result.score.overall, result.aiSummary, applicantId)
+    .run();
+  return c.json({ analysis: result, model });
+});
+
+app.post("/api/email/:type/:applicantId", async (c) => {
+  const type = c.req.param("type") as "invite" | "reject";
+  if (!requireAdmin(c.env.ADMIN_TOKEN, c.req.header("authorization"))) return c.json({ error: "unauthorized" }, 401);
+  const applicantId = c.req.param("applicantId");
+  const row = (await c.env.DB.prepare("SELECT * FROM applicants WHERE id = ?").bind(applicantId).first()) as any;
+  if (!row) return c.json({ error: "not found" }, 404);
+  if (type === "reject") {
+    const rej = buildRejectionEmail(row.name, []);
+    const sent = await sendEmail(c.env, row.email, rej.subject, rej.html);
+    await c.env.DB.prepare("INSERT INTO email_logs (id, applicant_id, type, to_email, subject, status, sent_at) VALUES (?, ?, ?, ?, ?, ?, ?)")
+      .bind(`em_${Date.now()}_${Math.random().toString(36).slice(2, 5)}`, applicantId, "rejection", row.email, rej.subject, sent ? "sent" : "queued", new Date().toISOString())
+      .run();
+    await c.env.DB.prepare("UPDATE applicants SET status = 'rejected' WHERE id = ?").bind(applicantId).run();
+    return c.json({ queued: !sent, sent, type: "rejection" });
+  }
+  const token = await signJwt({ applicantId, jobId: row.job_id, exp: Date.now() + 7 * 24 * 60 * 60 * 1000 }, c.env.JWT_SECRET);
+  const invite = buildInviteEmail(c.env.APP_URL, token, row.name);
+  const sent = await sendEmail(c.env, row.email, invite.subject, invite.html);
+  await c.env.DB.prepare("INSERT INTO email_logs (id, applicant_id, type, to_email, subject, status, sent_at) VALUES (?, ?, ?, ?, ?, ?, ?)")
+    .bind(`em_${Date.now()}_${Math.random().toString(36).slice(2, 5)}`, applicantId, "invite", row.email, invite.subject, sent ? "sent" : "queued", new Date().toISOString())
+    .run();
+  await c.env.DB.prepare("UPDATE applicants SET status = 'invited' WHERE id = ?").bind(applicantId).run();
+  return c.json({ queued: !sent, sent, token });
+});
+
+app.get("/api/bookings", async (c) => {
+  if (!requireAdmin(c.env.ADMIN_TOKEN, c.req.header("authorization"))) return c.json({ error: "unauthorized" }, 401);
+  const { results } = await c.env.DB.prepare("SELECT * FROM bookings ORDER BY date DESC, time DESC LIMIT 200").all();
+  return c.json({ bookings: results });
+});
+
+app.post("/api/bookings/interview", async (c) => {
+  const { token, date, time, jobId } = await c.req.json<{ token: string; date: string; time: string; jobId: string }>();
+  if (!token || !date || !time) return c.json({ error: "token,date,time required" }, 400);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return c.json({ error: "invalid date" }, 400);
+  if (!/^\d{2}:\d{2}$/.test(time)) return c.json({ error: "invalid time" }, 400);
+  const payload = await verifyJwt(token, c.env.JWT_SECRET);
+  if (!payload) return c.json({ error: "invalid or expired token" }, 401);
+  const applicantId = payload.applicantId;
+  const applicant = (await c.env.DB.prepare("SELECT id, name, email FROM applicants WHERE id = ?").bind(applicantId).first()) as any;
+  if (!applicant) return c.json({ error: "applicant not found" }, 404);
+  const conflict = (await c.env.DB.prepare("SELECT id FROM bookings WHERE date = ? AND time = ? AND status = 'confirmed'").bind(date, time).first()) as any;
+  if (conflict) return c.json({ error: "slot already booked, pick another time" }, 409);
+  const bid = `bkg_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+  const startMins = Number(time.split(":")[0]) * 60 + Number(time.split(":")[1]);
+  const endTime = `${String(Math.floor((startMins + 30) / 60)).padStart(2, "0")}:${String((startMins + 30) % 60).padStart(2, "0")}`;
+  const meetingLink = `https://meet.google.com/${Math.random().toString(36).slice(2, 6)}-${Math.random().toString(36).slice(2, 6)}`;
+  await c.env.DB.prepare(
+    "INSERT INTO bookings (id, applicant_id, job_id, event_id, event_title, date, time, end_time, timezone, invitee_name, invitee_email, meeting_type, meeting_link, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'Asia/Jakarta', ?, ?, ?, ?, 'confirmed', ?)"
+  )
+    .bind(bid, applicantId, payload.jobId || jobId || "", "evt-potensi-interview", "Interview Live Streamer", date, time, endTime, applicant.name, applicant.email, "google_meet", meetingLink, new Date().toISOString())
+    .run();
+  await c.env.DB.prepare("UPDATE applicants SET status = 'booked' WHERE id = ?").bind(applicantId).run();
+  return c.json({ ok: true, booking: { id: bid, applicantId, jobId: payload.jobId || jobId || "", eventTitle: "Interview Live Streamer", date, time, endTime, timezone: "Asia/Jakarta", inviteeName: applicant.name, inviteeEmail: applicant.email, meetingType: "google_meet", meetingLink, status: "confirmed" } });
+});
+
+app.post("/api/bookings/:id/reschedule", async (c) => {
+  const { token, date, time } = await c.req.json<{ token: string; date: string; time: string }>();
+  if (!token || !date || !time) return c.json({ error: "token,date,time required" }, 400);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !/^\d{2}:\d{2}$/.test(time)) return c.json({ error: "invalid date/time" }, 400);
+  const payload = await verifyJwt(token, c.env.JWT_SECRET);
+  if (!payload) return c.json({ error: "invalid or expired token" }, 401);
+  const id = c.req.param("id");
+  const booking = (await c.env.DB.prepare("SELECT id, applicant_id FROM bookings WHERE id = ?").bind(id).first()) as any;
+  if (!booking) return c.json({ error: "booking not found" }, 404);
+  if (booking.applicant_id !== payload.applicantId) return c.json({ error: "not your booking" }, 403);
+  const conflict = (await c.env.DB.prepare("SELECT id FROM bookings WHERE date = ? AND time = ? AND status = 'confirmed' AND id != ?").bind(date, time, id).first()) as any;
+  if (conflict) return c.json({ error: "slot already booked" }, 409);
+  const startMins = Number(time.split(":")[0]) * 60 + Number(time.split(":")[1]);
+  const endTime = `${String(Math.floor((startMins + 30) / 60)).padStart(2, "0")}:${String((startMins + 30) % 60).padStart(2, "0")}`;
+  await c.env.DB.prepare("UPDATE bookings SET date = ?, time = ?, end_time = ? WHERE id = ?").bind(date, time, endTime, id).run();
+  return c.json({ ok: true, id, date, time, endTime });
+});
+
+app.post("/api/bookings/:id/cancel", async (c) => {
+  const { token } = await c.req.json<{ token: string }>();
+  if (!token) return c.json({ error: "token required" }, 400);
+  const payload = await verifyJwt(token, c.env.JWT_SECRET);
+  if (!payload) return c.json({ error: "invalid or expired token" }, 401);
+  const id = c.req.param("id");
+  const booking = (await c.env.DB.prepare("SELECT id, applicant_id FROM bookings WHERE id = ?").bind(id).first()) as any;
+  if (!booking) return c.json({ error: "booking not found" }, 404);
+  if (booking.applicant_id !== payload.applicantId) return c.json({ error: "not your booking" }, 403);
+  await c.env.DB.prepare("UPDATE bookings SET status = 'cancelled' WHERE id = ?").bind(id).run();
+  await c.env.DB.prepare("UPDATE applicants SET status = 'invited' WHERE id = ?").bind(payload.applicantId).run();
+  return c.json({ ok: true, id, status: "cancelled" });
+});
+
+app.post("/api/email/offer/:applicantId", async (c) => {
+  if (!requireAdmin(c.env.ADMIN_TOKEN, c.req.header("authorization"))) return c.json({ error: "unauthorized" }, 401);
+  const applicantId = c.req.param("applicantId");
+  const row = (await c.env.DB.prepare("SELECT * FROM applicants WHERE id = ?").bind(applicantId).first()) as any;
+  if (!row) return c.json({ error: "not found" }, 404);
+  const tpl = (await c.env.DB.prepare("SELECT subject, body FROM email_templates WHERE type = 'offer'").first()) as any;
+  const subject = tpl?.subject || "Selamat! Anda Diterima sebagai Live Streamer";
+  const body = tpl?.body || `<div style="font-family:system-ui;padding:24px"><h2>Hai ${row.name},</h2><p>Selamat! Anda diterima sebagai <b>Live Streamer</b> di Potensi Creative.</p><p>Tim HR akan menghubungi Anda untuk langkah selanjutnya.</p><p>— HR Team</p></div>`;
+  const sent = await sendEmail(c.env, row.email, subject, body);
+  await c.env.DB.prepare("INSERT INTO email_logs (id, applicant_id, type, to_email, subject, status, sent_at) VALUES (?, ?, ?, ?, ?, ?, ?)")
+    .bind(`em_${Date.now()}_${Math.random().toString(36).slice(2, 5)}`, applicantId, "offer", row.email, subject, sent ? "sent" : "queued", new Date().toISOString())
+    .run();
+  await c.env.DB.prepare("UPDATE applicants SET status = 'hired', hired_at = ? WHERE id = ?").bind(new Date().toISOString(), applicantId).run();
+  return c.json({ queued: !sent, sent, type: "offer" });
+});
+
+app.post("/api/psychotest/send/:applicantId", async (c) => {
+  if (!requireAdmin(c.env.ADMIN_TOKEN, c.req.header("authorization"))) return c.json({ error: "unauthorized" }, 401);
+  const applicantId = c.req.param("applicantId");
+  const row = (await c.env.DB.prepare("SELECT * FROM applicants WHERE id = ?").bind(applicantId).first()) as any;
+  if (!row) return c.json({ error: "not found" }, 404);
+  const psyUrl = (await getSetting(c.env, "psychotest_url")) || "";
+  if (!psyUrl) return c.json({ error: "psychotest URL not configured" }, 400);
+  const tpl = (await c.env.DB.prepare("SELECT subject, body FROM email_templates WHERE type = 'psychotest'").first()) as any;
+  const subject = tpl?.subject || "Undangan Psikotes — Potensi Creative";
+  const body = tpl?.body || `<div style="font-family:system-ui;padding:24px"><h2>Hai ${row.name},</h2><p>Selamat! Anda lolos interview. Silakan ikuti psikotes online berikut:</p><p><a href="${psyUrl}" style="background:#4F46E5;color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none">Mulai Psikotes</a></p><p>— HR Team</p></div>`;
+  const sent = await sendEmail(c.env, row.email, subject, body);
+  await c.env.DB.prepare("INSERT INTO email_logs (id, applicant_id, type, to_email, subject, status, sent_at) VALUES (?, ?, ?, ?, ?, ?, ?)")
+    .bind(`em_${Date.now()}_${Math.random().toString(36).slice(2, 5)}`, applicantId, "psychotest", row.email, subject, sent ? "sent" : "queued", new Date().toISOString())
+    .run();
+  await c.env.DB.prepare("UPDATE applicants SET status = 'test_sent', psychotest_sent_at = ?, psychotest_link = ? WHERE id = ?").bind(new Date().toISOString(), psyUrl, applicantId).run();
+  return c.json({ queued: !sent, sent, psychotest_url: psyUrl });
+});
+
+app.post("/api/psychotest/result/:applicantId", async (c) => {
+  if (!requireAdmin(c.env.ADMIN_TOKEN, c.req.header("authorization"))) return c.json({ error: "unauthorized" }, 401);
+  const applicantId = c.req.param("applicantId");
+  const { score, notes } = await c.req.json<{ score?: number; notes?: string }>();
+  const row = (await c.env.DB.prepare("SELECT id FROM applicants WHERE id = ?").bind(applicantId).first()) as any;
+  if (!row) return c.json({ error: "not found" }, 404);
+  await c.env.DB.prepare("UPDATE applicants SET psychotest_score = ?, psychotest_notes = ?, status = 'tested' WHERE id = ?").bind(score ?? null, notes ?? "", applicantId).run();
+  return c.json({ ok: true, id: applicantId, score: score ?? null, notes: notes ?? "", status: "tested" });
+});
+
+app.get("/api/analytics", async (c) => {
+  if (!requireAdmin(c.env.ADMIN_TOKEN, c.req.header("authorization"))) return c.json({ error: "unauthorized" }, 401);
+  const { results } = await c.env.DB.prepare("SELECT status, COUNT(*) as count FROM applicants GROUP BY status").all() as any;
+  const counts: Record<string, number> = { pending: 0, analyzed: 0, invited: 0, booked: 0, interviewed: 0, test_sent: 0, tested: 0, hired: 0, rejected: 0 };
+  for (const r of results) if (counts[r.status] !== undefined) counts[r.status] = r.count;
+  const total = Object.values(counts).reduce((a, b) => a + b, 0);
+  const posts = (await c.env.DB.prepare("SELECT status, COUNT(*) as count FROM social_posts GROUP BY status").all()) as any;
+  const postCounts: Record<string, number> = { scheduled: 0, published: 0, failed: 0, cancelled: 0 };
+  for (const r of posts.results) if (postCounts[r.status] !== undefined) postCounts[r.status] = r.count;
+  return c.json({ applicants: counts, total, posts: postCounts });
+});
+
+app.post("/api/wa/:applicantId", async (c) => {
+  if (!requireAdmin(c.env.ADMIN_TOKEN, c.req.header("authorization"))) return c.json({ error: "unauthorized" }, 401);
+  const applicantId = c.req.param("applicantId");
+  const row = (await c.env.DB.prepare("SELECT name, wa, status FROM applicants WHERE id = ?").bind(applicantId).first()) as any;
+  if (!row) return c.json({ error: "not found" }, 404);
+  if (!row.wa) return c.json({ error: "no WhatsApp number" }, 400);
+  const msg = row.status === "invited"
+    ? `Halo ${row.name}, selamat! Anda diundang interview Live Streamer di Potensi Creative. Silakan cek email untuk booking jadwal.`
+    : row.status === "hired"
+    ? `Halo ${row.name}, selamat! Anda diterima sebagai Live Streamer di Potensi Creative.`
+    : `Halo ${row.name}, terima kasih telah melamar di Potensi Creative.`;
+  const link = `https://wa.me/${row.wa.replace(/[^\d]/g, "")}?text=${encodeURIComponent(msg)}`;
+  return c.json({ ok: true, link, message: msg });
+});
+
+app.patch("/api/jobs/:id", async (c) => {
+  if (!requireAdmin(c.env.ADMIN_TOKEN, c.req.header("authorization"))) return c.json({ error: "unauthorized" }, 401);
+  const id = c.req.param("id");
+  const { status, title, description } = await c.req.json<{ status?: string; title?: string; description?: string }>();
+  const row = (await c.env.DB.prepare("SELECT id FROM jobs WHERE id = ?").bind(id).first()) as any;
+  if (!row) return c.json({ error: "not found" }, 404);
+  if (status) await c.env.DB.prepare("UPDATE jobs SET status = ? WHERE id = ?").bind(status, id).run();
+  if (title) await c.env.DB.prepare("UPDATE jobs SET title = ? WHERE id = ?").bind(title, id).run();
+  if (description !== undefined) await c.env.DB.prepare("UPDATE jobs SET description = ? WHERE id = ?").bind(description, id).run();
+  return c.json({ ok: true, id });
+});
+
+app.post("/api/applicants/:id/notes", async (c) => {
+  if (!requireAdmin(c.env.ADMIN_TOKEN, c.req.header("authorization"))) return c.json({ error: "unauthorized" }, 401);
+  const id = c.req.param("id");
+  const { notes } = await c.req.json<{ notes: string }>();
+  const row = (await c.env.DB.prepare("SELECT id FROM applicants WHERE id = ?").bind(id).first()) as any;
+  if (!row) return c.json({ error: "not found" }, 404);
+  await c.env.DB.prepare("UPDATE applicants SET notes = ? WHERE id = ?").bind(notes || "", id).run();
+  return c.json({ ok: true, id, notes });
+});
+
+app.get("/api/templates", async (c) => {
+  if (!requireAdmin(c.env.ADMIN_TOKEN, c.req.header("authorization"))) return c.json({ error: "unauthorized" }, 401);
+  const { results } = await c.env.DB.prepare("SELECT * FROM email_templates").all();
+  return c.json({ templates: results });
+});
+
+app.post("/api/templates/:type", async (c) => {
+  if (!requireAdmin(c.env.ADMIN_TOKEN, c.req.header("authorization"))) return c.json({ error: "unauthorized" }, 401);
+  const type = c.req.param("type");
+  const { subject, body } = await c.req.json<{ subject: string; body: string }>();
+  if (!subject || !body) return c.json({ error: "subject + body required" }, 400);
+  await c.env.DB.prepare(
+    "INSERT INTO email_templates (id, type, subject, body, updated_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT(type) DO UPDATE SET subject = ?, body = ?, updated_at = ?"
+  )
+    .bind(`tpl_${type}`, type, subject, body, new Date().toISOString(), subject, body, new Date().toISOString())
+    .run();
+  return c.json({ ok: true, type });
+});
+
+app.get("/api/models", async (c) => {
+  if (!requireAdmin(c.env.ADMIN_TOKEN, c.req.header("authorization"))) return c.json({ error: "unauthorized" }, 401);
+  const key = c.env.OPENROUTER_API_KEY;
+  if (!key) return c.json({ error: "OPENROUTER_API_KEY not set" }, 400);
+  try {
+    const r = await fetch("https://openrouter.ai/api/v1/models", { headers: { authorization: `Bearer ${key}` } });
+    if (!r.ok) return c.json({ error: `OpenRouter ${r.status}` }, 502);
+    const j = await r.json();
+    const models = (j.data || []).map((m: any) => ({ id: m.id, name: m.name, context: m.context_length, pricing: m.pricing }));
+    return c.json({ models });
+  } catch (e) {
+    return c.json({ error: String(e) }, 502);
+  }
+});
+
+app.get("/api/settings", async (c) => {
+  if (!requireAdmin(c.env.ADMIN_TOKEN, c.req.header("authorization"))) return c.json({ error: "unauthorized" }, 401);
+  const { results } = await c.env.DB.prepare("SELECT key, value FROM settings").all() as any;
+  const map: Record<string, string> = {};
+  for (const r of results) map[r.key] = r.value;
+  return c.json({ settings: map });
+});
+
+app.post("/api/settings", async (c) => {
+  if (!requireAdmin(c.env.ADMIN_TOKEN, c.req.header("authorization"))) return c.json({ error: "unauthorized" }, 401);
+  const body = await c.req.json<{ key: string; value: string }>();
+  if (!body.key) return c.json({ error: "key required" }, 400);
+  await c.env.DB.prepare(
+    "INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE SET value = ?, updated_at = ?"
+  )
+    .bind(body.key, body.value, new Date().toISOString(), body.value, new Date().toISOString())
+    .run();
+  return c.json({ ok: true, key: body.key });
+});
+
+app.post("/api/applicants/:id/status", async (c) => {
+  if (!requireAdmin(c.env.ADMIN_TOKEN, c.req.header("authorization"))) return c.json({ error: "unauthorized" }, 401);
+  const id = c.req.param("id");
+  const { status } = await c.req.json<{ status: string }>();
+  const allowed = ["pending", "analyzed", "invited", "booked", "interviewed", "test_sent", "tested", "hired", "rejected"];
+  if (!allowed.includes(status)) return c.json({ error: "invalid status" }, 400);
+  const row = (await c.env.DB.prepare("SELECT id FROM applicants WHERE id = ?").bind(id).first()) as any;
+  if (!row) return c.json({ error: "not found" }, 404);
+  await c.env.DB.prepare("UPDATE applicants SET status = ? WHERE id = ?").bind(status, id).run();
+  return c.json({ ok: true, id, status });
+});
+
+export default {
+  fetch: app.fetch,
+  async scheduled(event: { cron?: string; scheduledTime?: number }, env: Bindings, ctx: { waitUntil(p: Promise<unknown>): void }) {
+    const now = new Date().toISOString();
+    const { results } = await env.DB.prepare(
+      "SELECT * FROM social_posts WHERE status = 'scheduled' AND scheduled_at <= ? LIMIT 20"
+    ).bind(now).all() as any;
+    const accounts = (await env.DB.prepare("SELECT * FROM social_accounts").all()).results as any[];
+    for (const post of results) {
+      const res = await publishPost(env, post, accounts);
+      const status = res.ok ? "published" : "failed";
+      await env.DB.prepare(
+        "UPDATE social_posts SET status = ?, published_at = ?, error = ?, post_ids = ? WHERE id = ?"
+      )
+        .bind(status, res.ok ? now : null, res.error || null, JSON.stringify(res.postIds || {}), post.id)
+        .run();
+    }
+  },
+  async queue(batch: MessageBatch<{ applicantId: string; jobId: string }>, env: Bindings) {
+    for (const msg of batch.messages) {
+      try {
+        const { applicantId } = msg.body;
+        const row = (await env.DB.prepare("SELECT cv_text, tiktok, ig, job_id FROM applicants WHERE id = ?").bind(applicantId).first()) as any;
+        if (!row) {
+          msg.ack();
+          continue;
+        }
+        const job = (await env.DB.prepare("SELECT criteria FROM jobs WHERE id = ?").bind(row.job_id).first()) as any;
+        const criteria = job?.criteria ? JSON.parse(job.criteria) : {};
+        const savedModel = await getSetting(env, "llm_model");
+        const modelName = savedModel || env.LLM_MODEL;
+        const llmResult = await analyzeWithLlm({ apiKey: env.OPENROUTER_API_KEY, model: modelName, cvText: row.cv_text ?? "", criteria, tiktok: row.tiktok, ig: row.ig });
+        const result = llmResult || analyzeWithFallback(row.cv_text ?? "", { criteria, tiktok: row.tiktok, ig: row.ig });
+        const model = llmResult ? (modelName || "openrouter") : "heuristic-fallback";
+        const analysisId = `ana_${Date.now()}_${Math.random().toString(36).slice(2, 5)}`;
+        await env.DB.prepare(
+          "INSERT INTO cv_analyses (id, applicant_id, parsed, score, missing_skills, strengths, decision, model, duration_ms, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+        )
+          .bind(
+            analysisId,
+            applicantId,
+            JSON.stringify(result.parsed),
+            JSON.stringify(result.score),
+            JSON.stringify(result.missingSkills),
+            JSON.stringify(result.strengths),
+            result.decision,
+            model,
+            0,
+            new Date().toISOString()
+          )
+          .run();
+        await env.DB.prepare("UPDATE applicants SET status = ?, score = ?, ai_summary = ? WHERE id = ?")
+          .bind("analyzed", result.score.overall, result.aiSummary, applicantId)
+          .run();
+        msg.ack();
+      } catch (e) {
+        try {
+          msg.retry();
+        } catch {
+          msg.ack();
+        }
+      }
+    }
+  },
+};

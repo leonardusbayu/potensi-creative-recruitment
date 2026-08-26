@@ -1,0 +1,9 @@
+# Local dev secrets for `wrangler dev`. Copy to `.dev.vars` and fill real values.
+# In production set via: `wrangler secret put JWT_SECRET` etc.
+
+JWT_SECRET=change-me-to-a-long-random-string
+ADMIN_TOKEN=change-me-to-a-secure-admin-token
+RESEND_API_KEY=
+EMAIL_FROM=Potensi Creative <hr@potensi-creative.id>
+OPENROUTER_API_KEY=
+LLM_MODEL=deepseek/deepseek-chat
