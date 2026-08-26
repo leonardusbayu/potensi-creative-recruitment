@@ -1,0 +1,41 @@
+﻿diff --git a/orchestratorRoutes.ts b/orchestratorRoutes.ts
+index 2ccc1c6..d5c773b 100644
+--- a/orchestratorRoutes.ts
++++ b/orchestratorRoutes.ts
+@@ -111,6 +111,36 @@ router.post('/:sessionId/finish', async (req: Request, res: Response) => {
+       req.params.sessionId,
+       userId
+     )
++
++    // ---- Potensi Creative integration: push result to our worker ----
++    try {
++      const sessionRow = await queryOne<{ candidate_id: string }>(
++        `SELECT candidate_id FROM sessions WHERE session_id = $1`,
++        [req.params.sessionId]
++      )
++      const cand = sessionRow
++        ? await queryOne<{ email: string }>(
++            `SELECT email FROM candidates WHERE candidate_id = $1`,
++            [sessionRow.candidate_id]
++          )
++        : null
++      if (cand?.email) {
++        await fetch(`${process.env.POTENSI_CALLBACK_URL || 'https://<your-worker>.workers.dev'}/api/psychotest/callback`, {
++          method: 'POST',
++          headers: {
++            'content-type': 'application/json',
++            'x-webhook-secret': process.env.POTENSI_WEBHOOK_SECRET || ''
++          },
++          body: JSON.stringify({
++            email: cand.email,
++            score: result.combinedOverall,
++            notes: result.combinedPassed ? 'LULUS' : 'TIDAK_LULUS'
++          })
++        })
++      }
++    } catch (err) {
++      console.error('[Orchestrator] Potensi callback failed:', err)
++    }
+     res.json(result)
+   } catch (err) {
+     const msg = err instanceof Error ? err.message : 'Failed to finish'

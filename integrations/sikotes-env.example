@@ -1,0 +1,10 @@
+# Sikotes backend .env — Potensi Creative integration
+# Add these to sikotes/backend/.env (copy from backend/.env.example)
+#
+# Base URL of the deployed Potensi Creative worker (no trailing slash).
+# Example: https://potensi-creative-recruitment.<your-subdomain>.workers.dev
+POTENSI_CALLBACK_URL=https://<your-worker>.workers.dev
+
+# Must match WEBHOOK_SECRET set on the Potensi worker
+# (npx wrangler secret put WEBHOOK_SECRET)
+POTENSI_WEBHOOK_SECRET=change-me-to-the-same-secret

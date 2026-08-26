@@ -83,6 +83,17 @@ await fetch('https://<your-worker>.workers.dev/api/psychotest/callback', {
 **Config to add in `sikotes` backend `.env`:**
 ```
 POTENSI_WEBHOOK_SECRET=<same as WEBHOOK_SECRET in Potensi worker>
+POTENSI_CALLBACK_URL=https://<your-worker>.workers.dev
+```
+
+**Ready-made patch files** (in this repo, `integrations/`):
+- `integrations/sikotes-orchestrator.patch` — exact diff to apply to `backend/src/routes/orchestratorRoutes.ts`
+- `integrations/sikotes-env.example` — env vars to add to `sikotes/backend/.env`
+
+Apply with:
+```bash
+cd sikotes
+git apply path/to/integrations/sikotes-orchestrator.patch
 ```
 
 **Security**: always set `WEBHOOK_SECRET` on our worker and mirror it as `POTENSI_WEBHOOK_SECRET` in `sikotes`. If unset on our side, the callback accepts any call (dev only).
