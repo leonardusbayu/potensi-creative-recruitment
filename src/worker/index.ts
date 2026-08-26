@@ -20,6 +20,7 @@ type Bindings = {
   EMAIL_FROM?: string;
   OPENROUTER_API_KEY?: string;
   LLM_MODEL?: string;
+  WEBHOOK_SECRET?: string;
 };
 
 type MessageBatch<T> = { messages: { body: T; ack(): void; retry(): void }[] };
@@ -512,6 +513,25 @@ app.post("/api/psychotest/result/:applicantId", async (c) => {
   if (!row) return c.json({ error: "not found" }, 404);
   await c.env.DB.prepare("UPDATE applicants SET psychotest_score = ?, psychotest_notes = ?, status = 'tested' WHERE id = ?").bind(score ?? null, notes ?? "", applicantId).run();
   return c.json({ ok: true, id: applicantId, score: score ?? null, notes: notes ?? "", status: "tested" });
+});
+
+app.post("/api/psychotest/callback", async (c) => {
+  const expected = c.env.WEBHOOK_SECRET;
+  const provided = c.req.header("x-webhook-secret") || "";
+  if (expected && provided !== expected) return c.json({ error: "unauthorized" }, 401);
+  const body = await c.req.json<{ applicantId?: string; email?: string; score?: number; notes?: string }>();
+  if (!body.email && !body.applicantId) return c.json({ error: "email or applicantId required" }, 400);
+  let row: any;
+  if (body.applicantId) {
+    row = (await c.env.DB.prepare("SELECT id FROM applicants WHERE id = ?").bind(body.applicantId).first()) as any;
+  } else {
+    row = (await c.env.DB.prepare("SELECT id FROM applicants WHERE email = ?").bind((body.email || "").toLowerCase()).first()) as any;
+  }
+  if (!row) return c.json({ error: "applicant not found" }, 404);
+  await c.env.DB.prepare("UPDATE applicants SET psychotest_score = ?, psychotest_notes = ?, status = 'tested' WHERE id = ?")
+    .bind(body.score ?? null, body.notes ?? "", row.id)
+    .run();
+  return c.json({ ok: true, id: row.id, status: "tested" });
 });
 
 app.get("/api/analytics", async (c) => {

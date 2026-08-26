@@ -43,34 +43,40 @@ The app currently sends the candidate a **link** to the psycho test via email, t
    - sets `psychotest_score`, `psychotest_notes`, `status = 'tested'`
 7. HR clicks **"Terima"** (→ offer email, `hired`) or **"Tolak"** (`rejected`).
 
-### Option B — Automatic (webhook from `sikotes`)
+### Option B — Automatic (webhook from `sikotes`) ✅ implemented
 
-If you want `sikotes` to push results back automatically (instead of HR typing them), add this worker route (not yet implemented, but the pattern is ready):
+`sikotes` can push results back automatically (no HR typing). The worker route is **already implemented** in `src/worker/index.ts`:
 
-```ts
-// src/worker/index.ts
-app.post("/api/psychotest/callback", async (c) => {
-  const body = await c.req.json<{ applicantId?: string; email?: string; score?: number; notes?: string }>();
-  if (!body.email && !body.applicantId) return c.json({ error: "email or applicantId required" }, 400);
-  let row;
-  if (body.applicantId) {
-    row = (await c.env.DB.prepare("SELECT id FROM applicants WHERE id = ?").bind(body.applicantId).first()) as any;
-  } else {
-    row = (await c.env.DB.prepare("SELECT id FROM applicants WHERE email = ?").bind(body.email).first()) as any;
-  }
-  if (!row) return c.json({ error: "applicant not found" }, 404);
-  await c.env.DB.prepare("UPDATE applicants SET psychotest_score = ?, psychotest_notes = ?, status = 'tested' WHERE id = ?")
-    .bind(body.score ?? null, body.notes ?? "", row.id)
-    .run();
-  return c.json({ ok: true, id: row.id, status: "tested" });
-});
+```
+POST /api/psychotest/callback
 ```
 
-**To secure this webhook**, verify a shared secret. Either:
-- Add an `X-Webhook-Secret` header and compare against `env.WEBHOOK_SECRET`, or
-- Have `sikotes` call it with the candidate's `applicantId` (from the URL you already send), so only authorized callers with that ID can update.
+**Request body** (JSON):
+```json
+{
+  "applicantId": "app_...",   // OR
+  "email": "candidate@email.com",
+  "score": 85,
+  "notes": "optional note"
+}
+```
 
-> **Note on `sikotes`**: the repo `github.com/ArrisBudi/sikotes` is currently **private** so the API/data model is unknown to us. Once it's public or its API is documented, we can adapt Option B to call the exact endpoint it exposes (e.g. `GET /api/peserta/hasil-tes/{id}` if it's a Laravel app like similar psikotes repos).
+It updates the applicant to `psychotest_score`, `psychotest_notes`, `status = 'tested'`.
+
+**Security**: send the header `X-Webhook-Secret: <your-secret>`. The Worker compares it against `WEBHOOK_SECRET` (set via `wrangler secret put WEBHOOK_SECRET`). If `WEBHOOK_SECRET` is unset, the endpoint accepts any call (dev mode) — **always set it in production**.
+
+**Example `sikotes` call** (e.g. in its Laravel controller after test completes):
+```php
+Http::post('https://<your-worker>.workers.dev/api/psychotest/callback', [
+    'json' => [
+        'email' => $peserta->email,   // or 'applicantId'
+        'score' => $hasil->score,
+    ],
+    'headers' => ['X-Webhook-Secret' => env('WEBHOOK_SECRET')],
+]);
+```
+
+> **Note on `sikotes`**: the repo `github.com/ArrisBudi/sikotes` is currently **private** so its exact data model is unknown to us. The webhook above accepts **either** `applicantId` (which we send to the candidate in the psychotest URL) **or** the candidate's `email`, so `sikotes` can call it with whichever identifier it has. If it exposes a results endpoint instead (e.g. `GET /api/peserta/hasil-tes/{id}`), we can also make the Worker poll that endpoint — just share the API doc.
 
 ---
 

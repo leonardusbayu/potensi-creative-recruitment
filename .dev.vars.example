@@ -7,3 +7,4 @@ RESEND_API_KEY=
 EMAIL_FROM=Potensi Creative <hr@potensi-creative.id>
 OPENROUTER_API_KEY=
 LLM_MODEL=deepseek/deepseek-chat
+WEBHOOK_SECRET=change-me-to-a-webhook-secret
