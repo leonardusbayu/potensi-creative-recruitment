@@ -494,15 +494,17 @@ app.post("/api/psychotest/send/:applicantId", async (c) => {
   if (!row) return c.json({ error: "not found" }, 404);
   const psyUrl = (await getSetting(c.env, "psychotest_url")) || "";
   if (!psyUrl) return c.json({ error: "psychotest URL not configured" }, 400);
+  const sep = psyUrl.includes("?") ? "&" : "?";
+  const link = `${psyUrl}${sep}applicantId=${encodeURIComponent(applicantId)}`;
   const tpl = (await c.env.DB.prepare("SELECT subject, body FROM email_templates WHERE type = 'psychotest'").first()) as any;
   const subject = tpl?.subject || "Undangan Psikotes — Potensi Creative";
-  const body = tpl?.body || `<div style="font-family:system-ui;padding:24px"><h2>Hai ${row.name},</h2><p>Selamat! Anda lolos interview. Silakan ikuti psikotes online berikut:</p><p><a href="${psyUrl}" style="background:#4F46E5;color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none">Mulai Psikotes</a></p><p>— HR Team</p></div>`;
+  const body = tpl?.body || `<div style="font-family:system-ui;padding:24px"><h2>Hai ${row.name},</h2><p>Selamat! Anda lolos interview. Silakan ikuti psikotes online berikut:</p><p><a href="${link}" style="background:#4F46E5;color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none">Mulai Psikotes</a></p><p>— HR Team</p></div>`;
   const sent = await sendEmail(c.env, row.email, subject, body);
   await c.env.DB.prepare("INSERT INTO email_logs (id, applicant_id, type, to_email, subject, status, sent_at) VALUES (?, ?, ?, ?, ?, ?, ?)")
     .bind(`em_${Date.now()}_${Math.random().toString(36).slice(2, 5)}`, applicantId, "psychotest", row.email, subject, sent ? "sent" : "queued", new Date().toISOString())
     .run();
-  await c.env.DB.prepare("UPDATE applicants SET status = 'test_sent', psychotest_sent_at = ?, psychotest_link = ? WHERE id = ?").bind(new Date().toISOString(), psyUrl, applicantId).run();
-  return c.json({ queued: !sent, sent, psychotest_url: psyUrl });
+  await c.env.DB.prepare("UPDATE applicants SET status = 'test_sent', psychotest_sent_at = ?, psychotest_link = ? WHERE id = ?").bind(new Date().toISOString(), link, applicantId).run();
+  return c.json({ queued: !sent, sent, psychotest_url: link });
 });
 
 app.post("/api/psychotest/result/:applicantId", async (c) => {
