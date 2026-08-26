@@ -43,40 +43,49 @@ The app currently sends the candidate a **link** to the psycho test via email, t
    - sets `psychotest_score`, `psychotest_notes`, `status = 'tested'`
 7. HR clicks **"Terima"** (→ offer email, `hired`) or **"Tolak"** (`rejected`).
 
-### Option B — Automatic (webhook from `sikotes`) ✅ implemented
+### Option B — Automatic (webhook from `sikotes`) ✅ implemented + integration guide
 
-`sikotes` can push results back automatically (no HR typing). The worker route is **already implemented** in `src/worker/index.ts`:
+`sikotes` (`github.com/ArrisBudi/sikotes`) is now **public** — it's a full **Express/TypeScript + PostgreSQL** hiring platform (not just a quiz): applicant funnel, AI screening, 3 test modules (personality DISC/MBTI, OTS, SPV), auth/JWT, and a multi-module orchestrator. Results are stored in PostgreSQL and read via `GET /api/orchestrator/:sessionId/combined` (auth-required).
+
+**Our side is ready.** The Potensi worker already has:
 
 ```
 POST /api/psychotest/callback
 ```
 
-**Request body** (JSON):
-```json
-{
-  "applicantId": "app_...",   // OR
-  "email": "candidate@email.com",
-  "score": 85,
-  "notes": "optional note"
-}
+Body: `{ applicantId? | email?, score?, notes? }` → sets applicant `psychotest_score`, `psychotest_notes`, `status='tested'`. Verify via `X-Webhook-Secret` header against `WEBHOOK_SECRET`.
+
+**What Arris needs to add in `sikotes`** (a small outbound call when a test finishes):
+
+In `backend/src/routes/orchestratorRoutes.ts`, the `POST /:sessionId/finish` handler already computes the combined result. After `TestOrchestrator.finishMultiModuleSession(...)`, add a call to our callback with the candidate's **email** (which links to our `applicants.email`):
+
+```ts
+// inside POST /:sessionId/finish, after result is computed
+const sessionRow = await queryOne<{ candidate_id: string }>(
+  `SELECT candidate_id FROM sessions WHERE session_id = $1`, [req.params.sessionId]
+)
+const cand = await queryOne<{ email: string }>(
+  `SELECT email FROM candidates WHERE candidate_id = $1`, [sessionRow!.candidate_id]
+)
+await fetch('https://<your-worker>.workers.dev/api/psychotest/callback', {
+  method: 'POST',
+  headers: { 'content-type': 'application/json', 'x-webhook-secret': process.env.POTENSI_WEBHOOK_SECRET! },
+  body: JSON.stringify({
+    email: cand!.email,
+    score: result.combinedOverall,   // finishMultiModuleSession returns { combinedOverall, combinedPassed, moduleScores }
+    notes: result.combinedPassed ? 'LULUS' : 'TIDAK LULUS'  // optional
+  })
+}).catch((e) => console.error('Potensi callback failed', e))
 ```
 
-It updates the applicant to `psychotest_score`, `psychotest_notes`, `status = 'tested'`.
+**Linking key**: our webhook matches by `applicants.email`. For this to work, the candidate **must register on `sikotes` with the same email they used to apply on Potensi** (this is the natural bridge — `sikotes` requires a UNIQUE email on `candidates`). Alternatively, pass the Potensi `applicantId` through the psychotest URL and echo it back in the webhook.
 
-**Security**: send the header `X-Webhook-Secret: <your-secret>`. The Worker compares it against `WEBHOOK_SECRET` (set via `wrangler secret put WEBHOOK_SECRET`). If `WEBHOOK_SECRET` is unset, the endpoint accepts any call (dev mode) — **always set it in production**.
-
-**Example `sikotes` call** (e.g. in its Laravel controller after test completes):
-```php
-Http::post('https://<your-worker>.workers.dev/api/psychotest/callback', [
-    'json' => [
-        'email' => $peserta->email,   // or 'applicantId'
-        'score' => $hasil->score,
-    ],
-    'headers' => ['X-Webhook-Secret' => env('WEBHOOK_SECRET')],
-]);
+**Config to add in `sikotes` backend `.env`:**
+```
+POTENSI_WEBHOOK_SECRET=<same as WEBHOOK_SECRET in Potensi worker>
 ```
 
-> **Note on `sikotes`**: the repo `github.com/ArrisBudi/sikotes` is currently **private** so its exact data model is unknown to us. The webhook above accepts **either** `applicantId` (which we send to the candidate in the psychotest URL) **or** the candidate's `email`, so `sikotes` can call it with whichever identifier it has. If it exposes a results endpoint instead (e.g. `GET /api/peserta/hasil-tes/{id}`), we can also make the Worker poll that endpoint — just share the API doc.
+**Security**: always set `WEBHOOK_SECRET` on our worker and mirror it as `POTENSI_WEBHOOK_SECRET` in `sikotes`. If unset on our side, the callback accepts any call (dev only).
 
 ---
 
