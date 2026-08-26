@@ -9,16 +9,13 @@
   },
   "vars": {
     "POSTIZ_URL": "http://localhost:3001",
-    "APP_URL": "http://localhost:3000"
-  },
-  "triggers": {
-    "crons": ["*/5 * * * *"]
+    "APP_URL": "https://potensi-hr.pages.dev"
   },
   "d1_databases": [
     {
       "binding": "DB",
       "database_name": "calendarjet_hr",
-      "database_id": "local-dev-placeholder"
+      "database_id": "968fbbb0-5545-496f-b572-c6f98cf8a395"
     }
   ],
   "r2_buckets": [
