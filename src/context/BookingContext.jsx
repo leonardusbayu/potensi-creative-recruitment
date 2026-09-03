@@ -676,7 +676,18 @@ export const BookingProvider = ({ children }) => {
       ]);
       let ok = false;
       if (postsR.ok) { const j = await postsR.json(); if (j.posts) { setSocialPosts(j.posts.map(normalizePost)); ok = true; } }
-      if (appsR.ok) { const j = await appsR.json(); if (j.applicants) { setApplicants(j.applicants.map(normalizeApplicant)); ok = true; } }
+      if (appsR.ok) {
+        const j = await appsR.json();
+        if (j.applicants) {
+          setApplicants((prev) => {
+            const server = j.applicants.map(normalizeApplicant);
+            const serverIds = new Set(server.map((a) => a.id));
+            const localPending = prev.filter((a) => a.pendingSync && !serverIds.has(a.id));
+            return [...server, ...localPending];
+          });
+          ok = true;
+        }
+      }
       if (bksR.ok) { const j = await bksR.json(); if (j.bookings) { setD1Bookings(j.bookings); ok = true; } }
       return ok;
     } catch { return false; }

@@ -12,8 +12,11 @@ import { Megaphone, Calendar, Users, TrendingUp, Link2, Settings, BarChart3, Cpu
 
 export const PotensiDashboard = () => {
   const [healthDown, setHealthDown] = useState(false);
-  const { jobs, applicants, bookings, socialAccounts, refreshAll, activePotensiSub, setActivePotensiSub } = useBooking();
+  const { jobs, applicants, bookings, socialAccounts, refreshAll, activePotensiSub, setActivePotensiSub, showToast } = useBooking();
   const [sub, setSub] = useState(activePotensiSub);
+  const [cvFilter, setCvFilter] = useState("all");
+  const [cvQuery, setCvQuery] = useState("");
+  const seenApplicantIds = React.useRef(null);
 
   useEffect(() => {
     setSub(activePotensiSub);
@@ -29,9 +32,28 @@ export const PotensiDashboard = () => {
   const hired = applicants.filter((a) => a.status === "hired").length;
 
   useEffect(() => {
+    if (seenApplicantIds.current === null) {
+      seenApplicantIds.current = new Set(applicants.map((a) => a.id));
+      return;
+    }
+    const fresh = applicants.filter((a) => !seenApplicantIds.current.has(a.id));
+    if (fresh.length > 0) {
+      fresh.forEach((a) => seenApplicantIds.current.add(a.id));
+      showToast(`${fresh.length} pelamar baru masuk: ${fresh.map((a) => a.name).join(", ")}`, "success");
+    }
+  }, [applicants]);
+
+  useEffect(() => {
     const t = setInterval(() => { refreshAll(); }, 30000);
     return () => clearInterval(t);
   }, [refreshAll]);
+
+  const openCVReview = (filterId, query = "") => {
+    setCvFilter(filterId);
+    setCvQuery(query);
+    setSub("cv");
+    setActivePotensiSub("cv");
+  };
 
   return (
     <div style={{ padding: "1.5rem" }}>
@@ -59,10 +81,30 @@ export const PotensiDashboard = () => {
           <div style={{ fontSize: 22, fontWeight: 800, marginTop: 4 }}>{jobs.length}</div>
           <div style={{ fontSize: 11, color: "var(--text-secondary)" }}>Auto-post ke akun terhubung</div>
         </div>
-        <div style={{ background: "var(--bg-surface)", border: "1px solid var(--border-default)", borderRadius: 12, padding: 16 }}>
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={() => openCVReview("all")}
+          onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") openCVReview("all"); }}
+          title="Klik untuk buka Review CV"
+          style={{ background: "var(--bg-surface)", border: "1px solid var(--border-default)", borderRadius: 12, padding: 16, cursor: "pointer", transition: "border-color .15s, transform .15s" }}
+          onMouseEnter={(e) => (e.currentTarget.style.borderColor = "var(--brand-500)")}
+          onMouseLeave={(e) => (e.currentTarget.style.borderColor = "var(--border-default)")}
+        >
           <div style={{ fontSize: 12, color: "var(--text-secondary)", display: "flex", gap: 6, alignItems: "center" }}><Users size={14} /> Pelamar Masuk</div>
-          <div style={{ fontSize: 22, fontWeight: 800, marginTop: 4 }}>{applicants.length}</div>
-          <div style={{ fontSize: 11, color: "var(--text-secondary)" }}>{analyzed} dianalisis · {invited} diundang · {pending} pending</div>
+          <div style={{ fontSize: 22, fontWeight: 800, marginTop: 4, display: "flex", alignItems: "center", gap: 8 }}>
+            {applicants.length}
+            {pending > 0 && (
+              <span onClick={(e) => { e.stopPropagation(); openCVReview("pending"); }} title={`${pending} menunggu review — klik untuk lihat`} style={{ background: "#6b7280", color: "#fff", fontSize: 11, fontWeight: 700, padding: "2px 9px", borderRadius: 999, cursor: "pointer" }}>{pending} pending</span>
+            )}
+            {analyzed > 0 && (
+              <span onClick={(e) => { e.stopPropagation(); openCVReview("analyzed"); }} title={`${analyzed} sudah dianalisis AI — klik untuk lihat`} style={{ background: "#b8352e", color: "#fff", fontSize: 11, fontWeight: 700, padding: "2px 9px", borderRadius: 999, cursor: "pointer" }}>{analyzed} dianalisis</span>
+            )}
+            {invited > 0 && (
+              <span onClick={(e) => { e.stopPropagation(); openCVReview("invited"); }} title={`${invited} diundang interview — klik untuk lihat`} style={{ background: "#10b981", color: "#fff", fontSize: 11, fontWeight: 700, padding: "2px 9px", borderRadius: 999, cursor: "pointer" }}>{invited} diundang</span>
+            )}
+          </div>
+          <div style={{ fontSize: 11, color: "var(--text-secondary)" }}>Klik untuk review CV kandidat</div>
         </div>
         <div style={{ background: "var(--bg-surface)", border: "1px solid var(--border-default)", borderRadius: 12, padding: 16 }}>
           <div style={{ fontSize: 12, color: "var(--text-secondary)", display: "flex", gap: 6, alignItems: "center" }}><TrendingUp size={14} /> Funnel</div>
@@ -76,7 +118,7 @@ export const PotensiDashboard = () => {
           { id: "overview", label: "Overview + Post" },
           { id: "accounts", label: `Hubungkan Akun (${socialAccounts.length})` },
           { id: "calendar", label: "Kalender Post" },
-          { id: "cv", label: "Review CV" },
+          { id: "cv", label: `Review CV${pending > 0 ? ` (${pending})` : ""}` },
           { id: "analytics", label: "Analytics" },
           { id: "ai", label: "AI Model (OpenRouter)" },
           { id: "hr", label: "Pengaturan HR" },
@@ -89,7 +131,7 @@ export const PotensiDashboard = () => {
         {sub === "overview" && <JobPostComposer />}
         {sub === "accounts" && <SocialAccountsView />}
         {sub === "calendar" && <SocialCalendarView />}
-        {sub === "cv" && <CVReviewView />}
+        {sub === "cv" && <CVReviewView key={`${cvFilter}-${cvQuery}`} initialFilter={cvFilter} initialQuery={cvQuery} />}
         {sub === "analytics" && <AnalyticsView />}
         {sub === "ai" && <OpenRouterSettingsView />}
         {sub === "hr" && <HRSettingsView />}

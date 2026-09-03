@@ -1,18 +1,24 @@
-﻿import React, { useState } from "react";
+﻿import React, { useEffect, useState } from "react";
 import { useBooking } from "../../context/BookingContext";
-import { Search, CheckCircle2, XCircle, Eye, Mail, FileText, MessageCircle, UserCheck, StickyNote, Brain, ClipboardList } from "lucide-react";
+import { Search, CheckCircle2, XCircle, Eye, Mail, FileText, MessageCircle, UserCheck, StickyNote, Brain, ClipboardList, RefreshCw } from "lucide-react";
 import { statusLabelId } from "../../utils/statusLabels";
 
-export const CVReviewView = () => {
-  const { applicants, analyzeApplicant, inviteToInterview, rejectApplication, markApplicantInterviewed, hireApplicant, sendPsychotest, recordPsychotestResult, saveApplicantNotes, getWhatsAppLink, showToast } = useBooking();
-  const [filter, setFilter] = useState("all");
-  const [q, setQ] = useState("");
+export const CVReviewView = ({ initialFilter = "all", initialQuery = "" }) => {
+  const { applicants, analyzeApplicant, inviteToInterview, rejectApplication, markApplicantInterviewed, hireApplicant, sendPsychotest, recordPsychotestResult, saveApplicantNotes, getWhatsAppLink, refreshAll, showToast } = useBooking();
+  const [filter, setFilter] = useState(initialFilter);
+  const [q, setQ] = useState(initialQuery);
   const [selected, setSelected] = useState([]);
   const [notesFor, setNotesFor] = useState(null);
   const [notesText, setNotesText] = useState("");
   const [psyFor, setPsyFor] = useState(null);
   const [psyScore, setPsyScore] = useState("");
   const [psyNotes, setPsyNotes] = useState("");
+  const [syncing, setSyncing] = useState(false);
+
+  useEffect(() => {
+    const t = setInterval(() => { refreshAll(); }, 20000);
+    return () => clearInterval(t);
+  }, [refreshAll]);
 
   const [sortBy, setSortBy] = useState("newest");
   const [page, setPage] = useState(1);
@@ -95,6 +101,13 @@ export const CVReviewView = () => {
       <p style={{ color: "var(--text-secondary)", fontSize: 13, marginTop: 4 }}>AI skor CV (40% liveExp + 25% komunikasi + 20% availability + bonus followers). <b>HR yang memutuskan</b> â€” undang, tolak, atau terima kandidat.</p>
 
       <div style={{ display: "flex", gap: 12, marginTop: 16, flexWrap: "wrap", alignItems: "center" }}>
+        <button
+          onClick={async () => { setSyncing(true); await refreshAll(); setSyncing(false); showToast("Data pelamar disinkronkan dari server", "success"); }}
+          disabled={syncing}
+          style={{ padding: "8px 12px", borderRadius: 8, border: "1px solid var(--border-default)", background: "var(--bg-surface)", display: "flex", gap: 6, alignItems: "center", fontWeight: 600 }}
+        >
+          <RefreshCw size={14} className={syncing ? "spin" : ""} /> {syncing ? "Menyinkronkan…" : "Sinkronkan"}
+        </button>
         <div style={{ display: "flex", gap: 6, alignItems: "center", background: "var(--bg-surface)", border: "1px solid var(--border-default)", borderRadius: 8, padding: "6px 10px" }}>
           <Search size={16} /><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Cari nama/email/handle" style={{ border: "none", outline: "none", background: "transparent" }} />
         </div>
