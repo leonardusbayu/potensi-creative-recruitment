@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+﻿import React, { useState } from 'react';
 import { useBooking } from '../../context/BookingContext';
 import { 
   Search, 
@@ -19,7 +19,7 @@ import {
 import { formatIndonesianDate, formatMeetingTimeRange } from '../../utils/calendarUtils';
 
 export const BookingsView = () => {
-  const { bookings, cancelBooking, rescheduleBooking, showToast } = useBooking();
+  const { allBookings, cancelBooking, rescheduleBooking, showToast } = useBooking();
 
   const [activeFilter, setActiveFilter] = useState('upcoming'); // 'all' | 'upcoming' | 'past' | 'cancelled'
   const [searchQuery, setSearchQuery] = useState('');
@@ -33,7 +33,7 @@ export const BookingsView = () => {
   const now = new Date();
   now.setHours(0, 0, 0, 0);
 
-  const filteredBookings = bookings.filter((b) => {
+  const filteredBookings = allBookings.filter((b) => {
     // Search query filter
     const q = searchQuery.toLowerCase();
     const matchesSearch = 
@@ -85,7 +85,7 @@ export const BookingsView = () => {
 
   const handleExportCSV = () => {
     const headers = ['ID,Acara,Tanggal,Jam,Tamu,Email,Telepon,Status,CRM Stage,Link Rapat\n'];
-    const rows = bookings.map(b => 
+    const rows = allBookings.map(b => 
       `"${b.id}","${b.eventTitle}","${b.date}","${b.time}","${b.inviteeName}","${b.inviteeEmail}","${b.inviteePhone || '-'}","${b.status}","${b.crmStage}","${b.meetingLink || '-'}"`
     ).join('\n');
 
@@ -361,7 +361,7 @@ export const BookingsView = () => {
                     {selectedBooking.eventTitle} ({selectedBooking.duration} Menit)
                   </div>
                   <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-                    📅 {formatIndonesianDate(selectedBooking.date)} pukul {selectedBooking.time} - {selectedBooking.endTime} WIB
+                    ðŸ“… {formatIndonesianDate(selectedBooking.date)} pukul {selectedBooking.time} - {selectedBooking.endTime} WIB
                   </div>
                   {selectedBooking.meetingLink && (
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.825rem' }}>

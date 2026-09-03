@@ -1,8 +1,11 @@
 export async function onRequest(context) {
-  const { request } = context;
+  const { request, env } = context;
+  const target = env.WORKER_ORIGIN || "https://calendarjet-hr.edubot-leonardus.workers.dev";
   const url = new URL(request.url);
-  url.hostname = "calendarjet-hr.edubot-leonardus.workers.dev";
+  url.hostname = new URL(target).hostname;
   url.port = "";
   url.protocol = "https:";
-  return fetch(new Request(url.toString(), request));
+  const forwarded = new Request(url.toString(), request);
+  forwarded.headers.delete("cookie");
+  return fetch(forwarded);
 }

@@ -8,7 +8,6 @@
     "enabled": true
   },
   "vars": {
-    "POSTIZ_URL": "http://localhost:3001",
     "APP_URL": "https://potensi-hr.pages.dev",
     "EMAIL_FROM": "Potensi Creative <hr@potensi-creative.id>",
     "LLM_MODEL": "deepseek/deepseek-chat"
@@ -42,8 +41,5 @@
         "dead_letter_queue": "cv-queue-dlq"
       }
     ]
-  },
-  "ai": {
-    "binding": "AI"
   }
 }

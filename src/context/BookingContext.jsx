@@ -171,6 +171,25 @@ export const BookingProvider = ({ children }) => {
         if (acctsR.ok) { const j = await acctsR.json(); if (j.accounts?.length) setSocialAccounts((prev) => { const ids = new Set(prev.map((a) => a.id)); return [...j.accounts.map(normalizeAccount).filter((a) => !ids.has(a.id)), ...prev]; }); }
         if (appsR.ok) { const j = await appsR.json(); if (j.applicants?.length) setApplicants((prev) => { const ids = new Set(prev.map((a) => a.id)); return [...j.applicants.map(normalizeApplicant).filter((a) => !ids.has(a.id)), ...prev]; }); }
         if (bksR.ok) { const j = await bksR.json(); if (j.bookings?.length) setD1Bookings(j.bookings); }
+
+        const unsynced = applicants.filter((a) => a.pendingSync);
+        for (const app of unsynced) {
+          try {
+            const fd = new FormData();
+            fd.append("jobId", app.job_id);
+            fd.append("name", app.name);
+            fd.append("email", app.email);
+            fd.append("wa", app.wa || "");
+            fd.append("tiktok", app.tiktok || "");
+            fd.append("ig", app.ig || "");
+            fd.append("cv", new File([new Blob(["pending-sync-no-cv-file"])], `${app.id}.txt`, { type: "text/plain" }));
+            const r = await fetch("/api/apply", { method: "POST", body: fd });
+            if (r.ok) {
+              const j = await r.json().catch(() => ({}));
+              setApplicants((prev) => prev.map((a) => a.id === app.id ? { ...a, id: j.applicantId || app.id, pendingSync: false } : a));
+            }
+          } catch {}
+        }
       } catch {}
     })();
   }, []);
@@ -402,7 +421,7 @@ export const BookingProvider = ({ children }) => {
     if (applicants.some((x) => x.email.toLowerCase() === email && x.job_id === jobId)) {
       return { error: "duplicate application for this job" };
     }
-    const app = { id: `app_${Date.now()}`, job_id: jobId, name: String(formData.get("name")), email, wa: String(formData.get("wa")), tiktok: String(formData.get("tiktok")), ig: String(formData.get("ig")), status: "pending", score: null, ai_summary: "", applied_at: new Date().toISOString() };
+    const app = { id: `app_${Date.now()}`, job_id: jobId, name: String(formData.get("name")), email, wa: String(formData.get("wa")), tiktok: String(formData.get("tiktok")), ig: String(formData.get("ig")), status: "pending", score: null, ai_summary: "", applied_at: new Date().toISOString(), pendingSync: true };
     setApplicants((prev) => [app, ...prev]);
     return { applicantId: app.id, offline: true };
   };
@@ -423,9 +442,32 @@ export const BookingProvider = ({ children }) => {
     let liveExp = /live|host|mc/i.test(cvText) ? 25 : 10;
     let bonus = /10k/i.test(a.tiktok + a.ig) ? 15 : /1k/i.test(a.tiktok + a.ig) ? 7 : 0;
     const overall = Math.min(100, liveExp + 15 + 12 + bonus);
-    setApplicants((prev) => prev.map((x) => x.id === applicantId ? { ...x, status: "analyzed", score: overall, ai_summary: `AI score ${overall} (bonus ${bonus})` } : x));
-    showToast(`AI score ${overall} — HR tentukan undang/tolak`, "info");
+    setApplicants((prev) => prev.map((x) => x.id === applicantId ? { ...x, status: "analyzed", score: overall, ai_summary: `[ESTIMASI LOKAL — bukan LLM] Skor ${overall} (bonus ${bonus}). Server tidak terjangkau; jalankan Analisis ulang saat online.` } : x));
+    showToast(`Skor lokal ${overall} (bukan LLM) — jalankan Analisis ulang saat online`, "warning");
   };
+
+  const d1BookingsNormalized = d1Bookings.map((b) => ({
+    id: b.id,
+    eventId: b.event_id || "evt-potensi-interview",
+    eventTitle: b.event_title || "Interview Live Streamer",
+    date: b.date,
+    time: b.time,
+    endTime: b.end_time,
+    timezone: b.timezone || "Asia/Jakarta",
+    inviteeName: b.invitee_name || "",
+    inviteeEmail: b.invitee_email || "",
+    inviteePhone: "",
+    meetingType: b.meeting_type || "google_meet",
+    meetingLink: b.meeting_link || "",
+    status: b.status || "confirmed",
+    crmStage: "booked",
+    notes: "",
+    answers: {},
+    createdAt: b.created_at,
+    source: "d1",
+  }));
+
+  const allBookings = [...d1BookingsNormalized, ...bookings];
 
   const adminHeaders = () => {
     const token = localStorage.getItem("calendarjet_admin_token") || "";
@@ -702,6 +744,7 @@ export const BookingProvider = ({ children }) => {
         eventTypes,
         availability,
         bookings,
+        allBookings,
         d1Bookings,
         brandSettings,
         aiMessages,

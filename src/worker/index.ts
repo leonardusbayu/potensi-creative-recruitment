@@ -11,8 +11,6 @@ type Bindings = {
   DB: any;
   CV_BUCKET: any;
   CV_QUEUE: any;
-  AI: any;
-  POSTIZ_URL: string;
   APP_URL: string;
   JWT_SECRET: string;
   ADMIN_TOKEN: string;
@@ -31,15 +29,6 @@ function sanitizeFileName(name: string): string {
 
 function isValidEmail(email: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
-}
-
-function isAllowedPostizUrl(url: string): boolean {
-  try {
-    const u = new URL(url);
-    return u.protocol === "http:" || u.protocol === "https:";
-  } catch {
-    return false;
-  }
 }
 
 function requireAdmin(adminToken: string, authorization: string | undefined): boolean {
