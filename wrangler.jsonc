@@ -1,6 +1,6 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "calendarjet-hr",
+  "name": "potensi-creative-recruitment",
   "compatibility_date": "2025-08-01",
   "compatibility_flags": ["nodejs_compat"],
   "main": "src/worker/index.ts",
@@ -23,7 +23,7 @@
   "r2_buckets": [
     {
       "binding": "CV_BUCKET",
-      "bucket_name": "cv-store"
+      "bucket_name": "potensi-cv-store"
     }
   ],
   "queues": {
