@@ -1,6 +1,6 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "potensi-creative-recruitment",
+  "name": "calendarjet-hr",
   "compatibility_date": "2025-08-01",
   "compatibility_flags": ["nodejs_compat"],
   "main": "src/worker/index.ts",
