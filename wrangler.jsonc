@@ -9,6 +9,7 @@
   },
   "vars": {
     "APP_URL": "https://potensi-hr.pages.dev",
+    "MEDIA_URL": "https://potensi-hr.pages.dev",
     "EMAIL_FROM": "Potensi Creative <hr@potensi-creative.id>",
     "LLM_MODEL": "deepseek/deepseek-chat"
   },
