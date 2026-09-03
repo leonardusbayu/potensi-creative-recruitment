@@ -83,6 +83,11 @@ async function getSetting(env: Bindings, key: string): Promise<string | undefine
   }
 }
 
+async function getOpenRouterKey(env: Bindings): Promise<string | undefined> {
+  const saved = await getSetting(env, "openrouter_key");
+  return saved || env.OPENROUTER_API_KEY || undefined;
+}
+
 async function sendEmail(env: Bindings, to: string, subject: string, html: string): Promise<boolean> {
   if (!env.RESEND_API_KEY || !env.EMAIL_FROM) return false;
   try {
@@ -357,7 +362,8 @@ app.post("/api/cv/analyze/:applicantId", async (c) => {
   const start = Date.now();
   const savedModel = await getSetting(c.env, "llm_model");
   const modelName = savedModel || c.env.LLM_MODEL;
-  const llmResult = await analyzeWithLlm({ apiKey: c.env.OPENROUTER_API_KEY, model: modelName, cvText: row.cv_text ?? "", criteria, tiktok: row.tiktok, ig: row.ig });
+  const orKey = await getOpenRouterKey(c.env);
+  const llmResult = await analyzeWithLlm({ apiKey: orKey, model: modelName, cvText: row.cv_text ?? "", criteria, tiktok: row.tiktok, ig: row.ig });
   const result = llmResult || analyzeWithFallback(row.cv_text ?? "", { criteria, tiktok: row.tiktok, ig: row.ig });
   const model = llmResult ? (modelName || "openrouter") : "heuristic-fallback";
   const analysisId = `ana_${Date.now()}_${Math.random().toString(36).slice(2, 5)}`;
@@ -606,11 +612,11 @@ app.post("/api/templates/:type", async (c) => {
 
 app.get("/api/models", async (c) => {
   if (!requireAdmin(c.env.ADMIN_TOKEN, c.req.header("authorization"))) return c.json({ error: "unauthorized" }, 401);
-  const key = c.env.OPENROUTER_API_KEY;
-  if (!key) return c.json({ error: "OPENROUTER_API_KEY not set" }, 400);
+  const key = await getOpenRouterKey(c.env);
+  if (!key) return c.json({ error: "OpenRouter key not set — simpan di UI (Pengaturan HR → AI Model) atau set env OPENROUTER_API_KEY" }, 400);
   try {
     const r = await fetch("https://openrouter.ai/api/v1/models", { headers: { authorization: `Bearer ${key}` } });
-    if (!r.ok) return c.json({ error: `OpenRouter ${r.status}` }, 502);
+    if (!r.ok) return c.json({ error: `OpenRouter ${r.status} — pastikan API key valid` }, 502);
     const j = await r.json();
     const models = (j.data || []).map((m: any) => ({ id: m.id, name: m.name, context: m.context_length, pricing: m.pricing }));
     return c.json({ models });
@@ -682,7 +688,8 @@ export default {
         const criteria = job?.criteria ? JSON.parse(job.criteria) : {};
         const savedModel = await getSetting(env, "llm_model");
         const modelName = savedModel || env.LLM_MODEL;
-        const llmResult = await analyzeWithLlm({ apiKey: env.OPENROUTER_API_KEY, model: modelName, cvText: row.cv_text ?? "", criteria, tiktok: row.tiktok, ig: row.ig });
+        const orKey = await getOpenRouterKey(env);
+        const llmResult = await analyzeWithLlm({ apiKey: orKey, model: modelName, cvText: row.cv_text ?? "", criteria, tiktok: row.tiktok, ig: row.ig });
         const result = llmResult || analyzeWithFallback(row.cv_text ?? "", { criteria, tiktok: row.tiktok, ig: row.ig });
         const model = llmResult ? (modelName || "openrouter") : "heuristic-fallback";
         const analysisId = `ana_${Date.now()}_${Math.random().toString(36).slice(2, 5)}`;
