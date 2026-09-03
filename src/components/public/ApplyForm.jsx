@@ -26,7 +26,9 @@ export const ApplyForm = ({ jobSlug }) => {
       fd.append("cv", form.cv);
       const res = await submitApplication(fd);
       if (res?.error?.includes?.("duplicate")) showToast("Email sudah melamar untuk lowongan ini", "error");
-      else if (res?.offline) showToast("CV tersimpan lokal — server tidak terjangkau, HR belum menerima lamaran ini", "warning");
+      else if (res?.rateLimited) showToast("Terlalu banyak permintaan — coba lagi dalam beberapa menit. CV Anda tidak terkirim.", "error");
+      else if (res?.offline) showToast("CV tersimpan lokal — server tidak terjangkau. HR menerima lamaran saat server pulih.", "warning");
+      else if (res?.error) showToast(`Gagal mengirim: ${res.error}`, "error");
       else showToast(res?.applicantId ? "CV terkirim — sedang diverifikasi AI" : "Tersimpan lokal (Worker offline)", "success");
       if (res?.applicantId) setForm({ name: "", email: "", wa: "", tiktok: "", ig: "", cv: null });
     } catch (err) {

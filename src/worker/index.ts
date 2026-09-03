@@ -94,7 +94,17 @@ async function sendEmail(env: Bindings, to: string, subject: string, html: strin
 
 const app = new Hono<{ Bindings: Bindings }>();
 
-app.use("*", cors({ origin: (origin, c) => c.env.APP_URL ?? origin, credentials: true }));
+const ALLOWED_ORIGINS = ["https://potensi-hr.pages.dev", "http://localhost:3000", "http://127.0.0.1:3000"];
+
+app.use("*", cors({
+  origin: (origin, c) => {
+    const appUrl = c.env.APP_URL;
+    if (appUrl && origin === appUrl) return origin;
+    if (ALLOWED_ORIGINS.includes(origin)) return origin;
+    return appUrl ?? origin;
+  },
+  credentials: true
+}));
 app.use("*", logger());
 
 app.get("/api/health", (c) => c.json({ ok: true, service: "calendarjet-hr" }));
@@ -251,18 +261,20 @@ app.post("/api/apply", async (c) => {
   const tiktok = String(form.get("tiktok") ?? "").trim().slice(0, 50);
   const ig = String(form.get("ig") ?? "").trim().slice(0, 50);
 
-  const ip = c.req.header("cf-connecting-ip") || "unknown";
-  const rlKey = `apply:${ip}`;
-  const now = new Date().toISOString();
-  const windowStart = new Date(Date.now() - 60 * 60 * 1000).toISOString();
-  const rl = (await c.env.DB.prepare("SELECT count, window_start FROM rate_limits WHERE key = ?").bind(rlKey).first()) as any;
-  if (rl && rl.window_start > windowStart) {
-    if (rl.count >= 10) return c.json({ error: "too many applications, try later" }, 429);
-    await c.env.DB.prepare("UPDATE rate_limits SET count = count + 1 WHERE key = ?").bind(rlKey).run();
-  } else {
-    await c.env.DB.prepare("INSERT INTO rate_limits (key, count, window_start) VALUES (?, 1, ?) ON CONFLICT(key) DO UPDATE SET count = 1, window_start = ?")
-      .bind(rlKey, now, now)
-      .run();
+  const ip = c.req.header("cf-connecting-ip") || c.req.header("x-real-ip") || c.req.header("x-forwarded-for")?.split(",")[0]?.trim() || "";
+  const rlKey = ip ? `apply:${ip}` : null;
+  if (rlKey) {
+    const now = new Date().toISOString();
+    const windowStart = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+    const rl = (await c.env.DB.prepare("SELECT count, window_start FROM rate_limits WHERE key = ?").bind(rlKey).first()) as any;
+    if (rl && rl.window_start > windowStart) {
+      if (rl.count >= 10) return c.json({ error: "too many applications, try later" }, 429);
+      await c.env.DB.prepare("UPDATE rate_limits SET count = count + 1 WHERE key = ?").bind(rlKey).run();
+    } else {
+      await c.env.DB.prepare("INSERT INTO rate_limits (key, count, window_start) VALUES (?, 1, ?) ON CONFLICT(key) DO UPDATE SET count = 1, window_start = ?")
+        .bind(rlKey, now, now)
+        .run();
+    }
   }
 
   if (!file || !jobId || !email || !name) return c.json({ error: "cv, jobId, email, name required" }, 400);

@@ -411,7 +411,17 @@ export const BookingProvider = ({ children }) => {
       if (r.status === 409) {
         return { error: j.error ?? "duplicate", existingId: j.existingId };
       }
+      if (r.status === 429) {
+        return { error: j.error ?? "too many applications", rateLimited: true };
+      }
       if (r.status >= 400) {
+        const email = String(formData.get("email")).toLowerCase();
+        const jobId = String(formData.get("jobId"));
+        if (!applicants.some((x) => x.email.toLowerCase() === email && x.job_id === jobId)) {
+          const app = { id: `app_${Date.now()}`, job_id: jobId, name: String(formData.get("name")), email, wa: String(formData.get("wa")), tiktok: String(formData.get("tiktok")), ig: String(formData.get("ig")), status: "pending", score: null, ai_summary: "", applied_at: new Date().toISOString(), pendingSync: true };
+          setApplicants((prev) => [app, ...prev]);
+          return { applicantId: app.id, offline: true };
+        }
         return { error: j.error ?? `apply failed ${r.status}` };
       }
     } catch {}
@@ -419,6 +429,9 @@ export const BookingProvider = ({ children }) => {
     const jobId = String(formData.get("jobId"));
     if (applicants.some((x) => x.email.toLowerCase() === email && x.job_id === jobId)) {
       return { error: "duplicate application for this job" };
+    }
+    if (applicants.some((x) => x.rateLimited)) {
+      return { error: "too many applications", rateLimited: true };
     }
     const app = { id: `app_${Date.now()}`, job_id: jobId, name: String(formData.get("name")), email, wa: String(formData.get("wa")), tiktok: String(formData.get("tiktok")), ig: String(formData.get("ig")), status: "pending", score: null, ai_summary: "", applied_at: new Date().toISOString(), pendingSync: true };
     setApplicants((prev) => [app, ...prev]);
