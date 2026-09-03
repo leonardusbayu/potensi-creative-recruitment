@@ -6,6 +6,7 @@ import { analyzeWithLlm, analyzeWithFallback } from "./llm";
 import { buildInviteEmail, buildRejectionEmail, escapeHtml } from "./email";
 import { publishToMeta } from "./meta";
 import { publishToTikTok } from "./tiktok";
+import { encryptToken, decryptToken, inspectMetaToken, exchangeLongLivedToken, inspectTikTok } from "./social";
 
 type Bindings = {
   DB: any;
@@ -20,6 +21,9 @@ type Bindings = {
   OPENROUTER_API_KEY?: string;
   LLM_MODEL?: string;
   WEBHOOK_SECRET?: string;
+  META_APP_ID?: string;
+  META_APP_SECRET?: string;
+  TOKEN_ENC_SECRET?: string;
 };
 
 type MessageBatch<T> = { messages: { body: T; ack(): void; retry(): void }[] };
@@ -176,6 +180,49 @@ app.get("/api/social/accounts", async (c) => {
   return c.json({ accounts: results });
 });
 
+app.post("/api/social/validate", async (c) => {
+  if (!requireAdmin(c.env.ADMIN_TOKEN, c.req.header("authorization"))) return c.json({ error: "unauthorized" }, 401);
+  const { platform, token } = await c.req.json<{ platform: string; token: string }>();
+  if (!platform || !token) return c.json({ error: "platform + token required" }, 400);
+
+  if (platform === "tiktok") {
+    const p = await inspectTikTok(token);
+    if (!p.ok) return c.json({ ok: false, error: p.error });
+    return c.json({ ok: true, name: p.displayName, openId: p.openId });
+  }
+  if (platform === "x") {
+    return c.json({ ok: true, name: "X manual mode" });
+  }
+
+  const p = await inspectMetaToken(token);
+  if (!p.ok) return c.json({ ok: false, error: p.error });
+
+  let longLived: { token: string; expires?: string } | null = null;
+  if (c.env.META_APP_ID && c.env.META_APP_SECRET) {
+    const ex = await exchangeLongLivedToken(token, c.env.META_APP_ID, c.env.META_APP_SECRET);
+    if (ex.token) longLived = { token: ex.token, expires: ex.expires };
+  }
+  return c.json({ ok: true, name: p.name, pages: p.pages, longLived });
+});
+
+app.post("/api/social/accounts/connect", async (c) => {
+  if (!requireAdmin(c.env.ADMIN_TOKEN, c.req.header("authorization"))) return c.json({ error: "unauthorized" }, 401);
+  const b = await c.req.json<{ platform: string; username: string; displayName?: string; accessToken: string; pageId?: string; openId?: string; tokenExpires?: string }>();
+  if (!b.platform || !b.username || !b.accessToken) return c.json({ error: "platform, username, token required" }, 400);
+
+  let encToken = b.accessToken;
+  if (c.env.WEBHOOK_SECRET && c.env.JWT_SECRET) {
+    encToken = await encryptToken(b.accessToken, c.env.WEBHOOK_SECRET + c.env.JWT_SECRET);
+  }
+  const id = `acct_${Date.now()}_${Math.random().toString(36).slice(2, 5)}`;
+  await c.env.DB.prepare(
+    "INSERT INTO social_accounts (id, platform, username, display_name, access_token, page_id, open_id, status, created_at, token_encrypted, token_expires_at, conn_status, conn_checked_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'connected', ?)"
+  )
+    .bind(id, b.platform, b.username.trim(), b.displayName || b.username.trim(), encToken, b.pageId || "", b.openId || "", b.accessToken ? "connected" : "manual", new Date().toISOString(), b.tokenExpires || null, new Date().toISOString())
+    .run();
+  return c.json({ id });
+});
+
 app.post("/api/social/accounts", async (c) => {
   if (!requireAdmin(c.env.ADMIN_TOKEN, c.req.header("authorization"))) return c.json({ error: "unauthorized" }, 401);
   const b = await c.req.json<{ platform: string; username: string; displayName?: string; accessToken?: string; pageId?: string; openId?: string }>();
@@ -268,11 +315,16 @@ async function publishPost(env: Bindings, post: any, accounts: any[]): Promise<{
   const postIds: Record<string, string> = {};
   let firstError: string | undefined;
   for (const acc of targets) {
+    let plainToken = acc.access_token;
+    if (env.WEBHOOK_SECRET && env.JWT_SECRET) {
+      const dec = await decryptToken(plainToken, env.WEBHOOK_SECRET + env.JWT_SECRET);
+      if (dec) plainToken = dec;
+    }
     let r: any;
     if (acc.platform === "tiktok") {
-      r = await publishToTikTok({ token: acc.access_token, openId: acc.open_id || "" }, post.caption, mediaUrls);
+      r = await publishToTikTok({ token: plainToken, openId: acc.open_id || "" }, post.caption, mediaUrls);
     } else {
-      r = await publishToMeta({ token: acc.access_token, platform: acc.platform, pageId: acc.page_id || "" }, post.caption, mediaUrls);
+      r = await publishToMeta({ token: plainToken, platform: acc.platform, pageId: acc.page_id || "" }, post.caption, mediaUrls);
     }
     if (r.ok) postIds[acc.platform] = r.postId;
     else firstError = firstError || r.error;
@@ -754,10 +806,23 @@ export default {
   fetch: app.fetch,
   async scheduled(event: { cron?: string; scheduledTime?: number }, env: Bindings, ctx: { waitUntil(p: Promise<unknown>): void }) {
     const now = new Date().toISOString();
+    const accounts = (await env.DB.prepare("SELECT * FROM social_accounts").all()).results as any[];
+
+    const encSecret = env.WEBHOOK_SECRET && env.JWT_SECRET ? env.WEBHOOK_SECRET + env.JWT_SECRET : null;
+    for (const acc of accounts) {
+      if (!acc.access_token) { await env.DB.prepare("UPDATE social_accounts SET conn_status = 'manual', conn_checked_at = ? WHERE id = ?").bind(now, acc.id).run(); continue; }
+      let plain = acc.access_token;
+      if (encSecret) { const d = await decryptToken(plain, encSecret); if (d) plain = d; }
+      const probe = acc.platform === "tiktok" ? await inspectTikTok(plain) : ["facebook", "instagram", "threads"].includes(acc.platform) ? await inspectMetaToken(plain) : null;
+      const st = probe ? (probe.ok ? "connected" : "invalid") : "unknown";
+      await env.DB.prepare("UPDATE social_accounts SET conn_status = ?, conn_checked_at = ?, conn_error = ? WHERE id = ?")
+        .bind(st, now, probe && !probe.ok ? String(probe.error).slice(0, 300) : null, acc.id)
+        .run();
+    }
+
     const { results } = await env.DB.prepare(
       "SELECT * FROM social_posts WHERE status = 'scheduled' AND scheduled_at <= ? ORDER BY scheduled_at ASC LIMIT 20"
     ).bind(now).all() as any;
-    const accounts = (await env.DB.prepare("SELECT * FROM social_accounts").all()).results as any[];
     for (const post of results) {
       const res = await publishPost(env, post, accounts);
       const status = res.ok ? "published" : "failed";

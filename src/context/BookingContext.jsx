@@ -709,13 +709,14 @@ export const BookingProvider = ({ children }) => {
       accessToken: account.accessToken || "",
       pageId: account.pageId || "",
       openId: account.openId || "",
+      tokenExpires: account.tokenExpires || null,
       connectedAt: new Date().toISOString(),
       status: account.accessToken ? "connected" : "manual",
     };
     setSocialAccounts((prev) => [...prev, acc]);
     try {
       const r = await apiFetch("/api/social/accounts", { method: "POST", headers: adminHeaders(),
-        body: JSON.stringify({ platform: acc.platform, username: acc.username, displayName: acc.displayName, accessToken: acc.accessToken, pageId: acc.pageId, openId: acc.openId }),
+        body: JSON.stringify({ platform: acc.platform, username: acc.username, displayName: acc.displayName, accessToken: acc.accessToken, pageId: acc.pageId, openId: acc.openId, tokenExpires: acc.tokenExpires }),
       });
       if (r.ok) { const j = await r.json(); acc.id = j.id; }
     } catch {}

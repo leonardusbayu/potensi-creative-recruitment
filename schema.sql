@@ -140,3 +140,9 @@ ALTER TABLE applicants ADD COLUMN psychotest_sent_at TEXT;
 ALTER TABLE applicants ADD COLUMN psychotest_score INTEGER;
 ALTER TABLE applicants ADD COLUMN psychotest_notes TEXT;
 ALTER TABLE applicants ADD COLUMN psychotest_link TEXT;
+
+ALTER TABLE social_accounts ADD COLUMN token_encrypted TEXT;
+ALTER TABLE social_accounts ADD COLUMN token_expires_at TEXT;
+ALTER TABLE social_accounts ADD COLUMN conn_status TEXT DEFAULT 'unknown';
+ALTER TABLE social_accounts ADD COLUMN conn_checked_at TEXT;
+ALTER TABLE social_accounts ADD COLUMN conn_error TEXT;
