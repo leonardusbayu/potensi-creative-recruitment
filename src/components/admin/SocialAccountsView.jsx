@@ -83,7 +83,7 @@ export const SocialAccountsView = () => {
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                   <span style={{ fontSize: 12, display: "flex", gap: 4, alignItems: "center", color: a.status === "connected" ? "#10b981" : "#f59e0b" }}><CheckCircle2 size={14} /> {a.status === "connected" ? "Terhubung (API)" : "Manual"}</span>
-                  <button onClick={() => removeSocialAccount(a.id)} style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid var(--border-default)", background: "var(--bg-surface)", color: "#ef4444", display: "flex", gap: 6, alignItems: "center" }}><Unlink size={14} /> Putus</button>
+                  <button onClick={() => { if (window.confirm(`Putuskan koneksi akun ${a.platform} @${a.username}? Token akan dihapus.`)) removeSocialAccount(a.id); }} style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid var(--border-default)", background: "var(--bg-surface)", color: "#ef4444", display: "flex", gap: 6, alignItems: "center" }}><Unlink size={14} /> Putus</button>
                 </div>
               </div>
             );

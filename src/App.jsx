@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { BookingProvider, useBooking } from './context/BookingContext';
 import { Header } from './components/common/Header';
 import { ToastContainer } from './components/common/Toast';
+import { ApiStatusBanner } from './components/common/ApiStatusBanner';
 import { AdminLayout } from './components/admin/AdminLayout';
 import { PublicBookingView } from './components/public/PublicBookingView';
 import { ShareEmbedModal } from './components/admin/ShareEmbedModal';
@@ -42,6 +43,7 @@ function MainApp() {
         </>
       )}
       <ToastContainer />
+      <ApiStatusBanner />
     </div>
   );
 }

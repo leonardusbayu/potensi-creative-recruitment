@@ -8,6 +8,7 @@ import {
 } from '../data/initialData';
 import { initialJobs, initialApplicants } from '../data/hrData';
 import { minutesToTime, timeToMinutes } from '../utils/calendarUtils';
+import { apiFetch } from '../utils/apiStatus';
 
 const BookingContext = createContext();
 
@@ -203,9 +204,11 @@ export const BookingProvider = ({ children }) => {
   }, [theme]);
 
   // Toast Helper
+  const [toastHistory, setToastHistory] = useState([]);
   const showToast = (message, type = 'success') => {
     const id = Date.now().toString();
     setToasts((prev) => [...prev, { id, message, type }]);
+    setToastHistory((prev) => [{ id, message, type, at: new Date().toISOString() }, ...prev].slice(0, 50));
     setTimeout(() => {
       setToasts((prev) => prev.filter((t) => t.id !== id));
     }, 4000);
@@ -392,7 +395,7 @@ export const BookingProvider = ({ children }) => {
     const slug = payload.slug ?? payload.title.toLowerCase().replace(/\s+/g, "-") + "-" + Date.now().toString(36).slice(2, 6);
     const job = { id, slug, title: payload.title, description: payload.description ?? "", criteria: payload.criteria ?? {}, status: "published", created_at: new Date().toISOString() };
     try {
-      const r = await fetch("/api/jobs", { method: "POST", headers: adminHeaders(), body: JSON.stringify(payload) });
+      const r = await apiFetch("/api/jobs", { method: "POST", headers: adminHeaders(), body: JSON.stringify(payload) });
       if (r.ok) { const j = await r.json(); job.id = j.id; job.slug = j.slug; }
     } catch {}
     setJobs((prev) => [job, ...prev]);
@@ -440,11 +443,11 @@ export const BookingProvider = ({ children }) => {
 
   const analyzeApplicant = async (applicantId) => {
     try {
-      const r = await fetch(`/api/cv/analyze/${applicantId}`, { method: "POST", headers: adminHeaders() });
+      const r = await apiFetch(`/api/cv/analyze/${applicantId}`, { method: "POST", headers: adminHeaders() });
       if (r.ok) {
         const j = await r.json();
         setApplicants((prev) => prev.map((a) => a.id === applicantId ? { ...a, status: "analyzed", score: j.analysis.score.overall, ai_summary: j.analysis.aiSummary } : a));
-        showToast(`AI score: ${j.analysis.score.overall} â€” HR tentukan undang/tolak`, "info");
+        showToast(`AI score: ${j.analysis.score.overall} - HR tentukan undang/tolak`, "info");
         return j.analysis;
       }
     } catch {}
@@ -454,8 +457,8 @@ export const BookingProvider = ({ children }) => {
     let liveExp = /live|host|mc/i.test(cvText) ? 25 : 10;
     let bonus = /10k/i.test(a.tiktok + a.ig) ? 15 : /1k/i.test(a.tiktok + a.ig) ? 7 : 0;
     const overall = Math.min(100, liveExp + 15 + 12 + bonus);
-    setApplicants((prev) => prev.map((x) => x.id === applicantId ? { ...x, status: "analyzed", score: overall, ai_summary: `[ESTIMASI LOKAL â€” bukan LLM] Skor ${overall} (bonus ${bonus}). Server tidak terjangkau; jalankan Analisis ulang saat online.` } : x));
-    showToast(`Skor lokal ${overall} (bukan LLM) â€” jalankan Analisis ulang saat online`, "warning");
+    setApplicants((prev) => prev.map((x) => x.id === applicantId ? { ...x, status: "analyzed", score: overall, ai_summary: `[ESTIMASI LOKAL - bukan LLM] Skor ${overall} (bonus ${bonus}). Server tidak terjangkau; jalankan Analisis ulang saat online.` } : x));
+    showToast(`Skor lokal ${overall} (bukan LLM) - jalankan Analisis ulang saat online`, "warning");
   };
 
   const d1BookingsNormalized = d1Bookings.map((b) => ({
@@ -489,24 +492,24 @@ export const BookingProvider = ({ children }) => {
   const inviteToInterview = async (applicantId) => {
     let sent = false;
     try {
-      const r = await fetch(`/api/email/invite/${applicantId}`, { method: "POST", headers: adminHeaders() });
+      const r = await apiFetch(`/api/email/invite/${applicantId}`, { method: "POST", headers: adminHeaders() });
       const j = await r.json().catch(() => ({}));
       sent = !!j.sent;
     } catch {}
     setApplicants((prev) => prev.map((a) => a.id === applicantId ? { ...a, status: "invited" } : a));
-    showToast(sent ? "Email undangan interview terkirim ke pelamar" : "Pelamar diundang (email belum terkirim â€” cek RESEND_API_KEY)", sent ? "success" : "info");
+    showToast(sent ? "Email undangan interview terkirim ke pelamar" : "Pelamar diundang (email belum terkirim - cek RESEND_API_KEY)", sent ? "success" : "info");
     return sent;
   };
 
   const rejectApplication = async (applicantId) => {
     let sent = false;
     try {
-      const r = await fetch(`/api/email/reject/${applicantId}`, { method: "POST", headers: adminHeaders() });
+      const r = await apiFetch(`/api/email/reject/${applicantId}`, { method: "POST", headers: adminHeaders() });
       const j = await r.json().catch(() => ({}));
       sent = !!j.sent;
     } catch {}
     setApplicants((prev) => prev.map((a) => a.id === applicantId ? { ...a, status: "rejected" } : a));
-    showToast(sent ? "Email penolakan terkirim" : "Lamaran ditolak (email belum terkirim â€” cek RESEND_API_KEY)", sent ? "success" : "info");
+    showToast(sent ? "Email penolakan terkirim" : "Lamaran ditolak (email belum terkirim - cek RESEND_API_KEY)", sent ? "success" : "info");
   };
 
   const markApplicantBooked = (applicantId) => {
@@ -519,12 +522,12 @@ export const BookingProvider = ({ children }) => {
 
   const markApplicantInterviewed = (applicantId) => {
     setApplicants((prev) => prev.map((a) => a.id === applicantId ? { ...a, status: "interviewed", interviewedAt: new Date().toISOString() } : a));
-    try { fetch(`/api/applicants/${applicantId}/status`, { method: "POST", headers: adminHeaders(), body: JSON.stringify({ status: "interviewed" }) }); } catch {}
+    try { apiFetch(`/api/applicants/${applicantId}/status`, { method: "POST", headers: adminHeaders(), body: JSON.stringify({ status: "interviewed" }) }); } catch {}
   };
 
   const moveApplicantStatus = async (applicantId, newStatus) => {
     setApplicants((prev) => prev.map((a) => (a.id === applicantId ? { ...a, status: newStatus } : a)));
-    try { fetch(`/api/applicants/${applicantId}/status`, { method: "POST", headers: adminHeaders(), body: JSON.stringify({ status: newStatus }) }); } catch {}
+    try { apiFetch(`/api/applicants/${applicantId}/status`, { method: "POST", headers: adminHeaders(), body: JSON.stringify({ status: newStatus }) }); } catch {}
     if (newStatus === "invited") await inviteToInterview(applicantId);
     if (newStatus === "test_sent") await sendPsychotest(applicantId);
     if (newStatus === "hired") await hireApplicant(applicantId);
@@ -534,28 +537,28 @@ export const BookingProvider = ({ children }) => {
   const hireApplicant = async (applicantId) => {
     let sent = false;
     try {
-      const r = await fetch(`/api/email/offer/${applicantId}`, { method: "POST", headers: adminHeaders() });
+      const r = await apiFetch(`/api/email/offer/${applicantId}`, { method: "POST", headers: adminHeaders() });
       const j = await r.json().catch(() => ({}));
       sent = !!j.sent;
     } catch {}
     setApplicants((prev) => prev.map((a) => a.id === applicantId ? { ...a, status: "hired", hiredAt: new Date().toISOString() } : a));
-    showToast(sent ? "Offer email terkirim â€” kandidat diterima" : "Kandidat ditandai hired (offer email belum terkirim)", sent ? "success" : "info");
+    showToast(sent ? "Offer email terkirim - kandidat diterima" : "Kandidat ditandai hired (offer email belum terkirim)", sent ? "success" : "info");
   };
 
   const sendPsychotest = async (applicantId) => {
     let sent = false;
     try {
-      const r = await fetch(`/api/psychotest/send/${applicantId}`, { method: "POST", headers: adminHeaders() });
+      const r = await apiFetch(`/api/psychotest/send/${applicantId}`, { method: "POST", headers: adminHeaders() });
       const j = await r.json().catch(() => ({}));
       sent = !!j.sent;
     } catch {}
     setApplicants((prev) => prev.map((a) => a.id === applicantId ? { ...a, status: "test_sent", psychotestSentAt: new Date().toISOString() } : a));
-    showToast(sent ? "Email psikotes terkirim" : "Psikotes ditandai terkirim (email belum terkirim â€” cek RESEND_API_KEY / URL)", sent ? "success" : "info");
+    showToast(sent ? "Email psikotes terkirim" : "Psikotes ditandai terkirim (email belum terkirim - cek RESEND_API_KEY / URL)", sent ? "success" : "info");
   };
 
   const recordPsychotestResult = async (applicantId, score, notes) => {
     try {
-      await fetch(`/api/psychotest/result/${applicantId}`, { method: "POST", headers: adminHeaders(), body: JSON.stringify({ score, notes }) });
+      await apiFetch(`/api/psychotest/result/${applicantId}`, { method: "POST", headers: adminHeaders(), body: JSON.stringify({ score, notes }) });
     } catch {}
     setApplicants((prev) => prev.map((a) => a.id === applicantId ? { ...a, status: "tested", psychotestScore: score, psychotestNotes: notes } : a));
     showToast("Hasil psikotes dicatat", "success");
@@ -563,7 +566,7 @@ export const BookingProvider = ({ children }) => {
 
   const saveApplicantNotes = async (applicantId, notes) => {
     setApplicants((prev) => prev.map((a) => a.id === applicantId ? { ...a, notes } : a));
-    try { await fetch(`/api/applicants/${applicantId}/notes`, { method: "POST", headers: adminHeaders(), body: JSON.stringify({ notes }) }); } catch {}
+    try { await apiFetch(`/api/applicants/${applicantId}/notes`, { method: "POST", headers: adminHeaders(), body: JSON.stringify({ notes }) }); } catch {}
   };
 
   const getWhatsAppLink = async (applicantId) => {
@@ -580,13 +583,13 @@ export const BookingProvider = ({ children }) => {
   };
 
   const saveTemplate = async (type, subject, body) => {
-    try { await fetch(`/api/templates/${type}`, { method: "POST", headers: adminHeaders(), body: JSON.stringify({ subject, body }) }); } catch {}
+    try { await apiFetch(`/api/templates/${type}`, { method: "POST", headers: adminHeaders(), body: JSON.stringify({ subject, body }) }); } catch {}
     showToast("Template email disimpan", "success");
   };
 
   const saveSetting = async (key, value) => {
     try {
-      const r = await fetch("/api/settings", { method: "POST", headers: adminHeaders(), body: JSON.stringify({ key, value }) });
+      const r = await apiFetch("/api/settings", { method: "POST", headers: adminHeaders(), body: JSON.stringify({ key, value }) });
       return r.ok;
     } catch { return false; }
   };
@@ -608,7 +611,7 @@ export const BookingProvider = ({ children }) => {
     let viaPostiz = false;
     const hasAdmin = !!localStorage.getItem("calendarjet_admin_token");
     if (!hasAdmin) {
-      showToast("Post disimpan lokal â€” set Admin Token dulu agar tersimpan di server & auto-publish", "warning");
+      showToast("Post disimpan lokal - set Admin Token dulu agar tersimpan di server & auto-publish", "warning");
     }
     try {
       const r = await fetch("/api/social/posts", {
@@ -621,7 +624,7 @@ export const BookingProvider = ({ children }) => {
         const j = await r.json();
         post.id = j.id || post.id;
       } else if (r.status === 401) {
-        showToast("Admin Token salah/tidak terdaftar â€” post hanya lokal", "error");
+        showToast("Admin Token salah/tidak terdaftar - post hanya lokal", "error");
       }
     } catch {}
     if (viaPostiz) post.status = "queued_postiz";
@@ -649,6 +652,24 @@ export const BookingProvider = ({ children }) => {
     return false;
   };
 
+  const refreshAll = async () => {
+    const token = localStorage.getItem("calendarjet_admin_token") || "";
+    if (!token) return false;
+    try {
+      const headers = { authorization: `Bearer ${token}` };
+      const [postsR, appsR, bksR] = await Promise.all([
+        fetch("/api/social/posts", { headers }),
+        fetch("/api/applicants", { headers }),
+        fetch("/api/bookings", { headers }),
+      ]);
+      let ok = false;
+      if (postsR.ok) { const j = await postsR.json(); if (j.posts) { setSocialPosts(j.posts.map(normalizePost)); ok = true; } }
+      if (appsR.ok) { const j = await appsR.json(); if (j.applicants) { setApplicants(j.applicants.map(normalizeApplicant)); ok = true; } }
+      if (bksR.ok) { const j = await bksR.json(); if (j.bookings) { setD1Bookings(j.bookings); ok = true; } }
+      return ok;
+    } catch { return false; }
+  };
+
   const repostNow = async (id) => {
     setSocialPosts((prev) => prev.map((p) => (p.id === id ? { ...p, status: "publishing" } : p)));
     try {
@@ -663,7 +684,7 @@ export const BookingProvider = ({ children }) => {
       }
     } catch {
       setSocialPosts((prev) => prev.map((p) => (p.id === id ? { ...p, status: "failed", error: "network error" } : p)));
-      showToast("Gagal publish â€” cek koneksi", "error");
+      showToast("Gagal publish - cek koneksi", "error");
     }
   };
 
@@ -681,9 +702,7 @@ export const BookingProvider = ({ children }) => {
     };
     setSocialAccounts((prev) => [...prev, acc]);
     try {
-      const r = await fetch("/api/social/accounts", {
-        method: "POST",
-        headers: adminHeaders(),
+      const r = await apiFetch("/api/social/accounts", { method: "POST", headers: adminHeaders(),
         body: JSON.stringify({ platform: acc.platform, username: acc.username, displayName: acc.displayName, accessToken: acc.accessToken, pageId: acc.pageId, openId: acc.openId }),
       });
       if (r.ok) { const j = await r.json(); acc.id = j.id; }
@@ -716,10 +735,10 @@ export const BookingProvider = ({ children }) => {
 
       if (lower.includes('slot') || lower.includes('jadwal') || lower.includes('kosong') || lower.includes('besok')) {
         const upcomingEvent = eventTypes[0];
-        reply = `Berdasarkan kalender kerja Anda untuk minggu ini, berikut analisis ketersediaan terbaik:\n\n` +
-          `â€¢ **Besok Pagi (10:00 - 11:30 WIB)**: 3 slot kosong tersedia.\n` +
-          `â€¢ **Besok Siang (14:30 - 16:30 WIB)**: 4 slot bebas bentrok untuk ${upcomingEvent.title}.\n\n` +
-          `ðŸ’¡ *Tips AI*: Anda memiliki 1 booking besok di jam 10:00. Saya menyarankan slot jam **14:00 WIB** sebagai prioritas tamu berikutnya.`;
+                reply = `Berdasarkan kalender kerja Anda untuk minggu ini, berikut analisis ketersediaan terbaik:\n\n` +
+          `- **Besok Pagi (10:00 - 11:30 WIB)**: 3 slot kosong tersedia.\n` +
+          `- **Besok Siang (14:30 - 16:30 WIB)**: 4 slot bebas bentrok untuk ${upcomingEvent.title}.\n\n` +
+          `Tips AI: Anda memiliki 1 booking besok di jam 10:00. Saya menyarankan slot jam **14:00 WIB** sebagai prioritas tamu berikutnya.`;
       } else if (lower.includes('follow up') || lower.includes('email') || lower.includes('draf') || lower.includes('pesan')) {
         reply = `Berikut draf email tindak lanjut (Follow-up) profesional yang siap dikirim:\n\n` +
           `---\n` +
@@ -732,10 +751,10 @@ export const BookingProvider = ({ children }) => {
         const total = bookings.length;
         const confirmed = bookings.filter(b => b.status === 'confirmed').length;
         const won = bookings.filter(b => b.crmStage === 'won').length;
-        reply = `ðŸ“Š **Laporan Performa Kalender & CRM:**\n\n` +
-          `â€¢ Total Booking Masuk: **${total} Pertemuan**\n` +
-          `â€¢ Pertemuan Terjadwal Aktif: **${confirmed} Janji Temu**\n` +
-          `â€¢ Deals Won / Selesai: **${won} Klien** (Tingkat Konversi: **${Math.round((won/Math.max(total, 1))*100)}%**)\n\n` +
+        reply = `Laporan Performa Kalender & CRM:\n\n` +
+          `- Total Booking Masuk: **${total} Pertemuan**\n` +
+          `- Pertemuan Terjadwal Aktif: **${confirmed} Janji Temu**\n` +
+          `- Deals Won / Selesai: **${won} Klien** (Tingkat Konversi: **${Math.round((won/Math.max(total, 1))*100)}%**)\n\n` +
           `Tren menunjukkan jenis acara **"${eventTypes[0]?.title || 'Konsultasi'}"** adalah yang paling diminati.`;
       } else {
         reply = `Saya mengerti permintaan Anda: "${promptText}". Saya dapat membantu Anda mengatur otomatisasi jadwal, memeriksa konflik antrean, membuat draf komunikasi tamu, atau mengoptimalkan konfigurasi slot kalender. Silakan tanyakan hal spesifik!`;
@@ -783,6 +802,7 @@ export const BookingProvider = ({ children }) => {
         selectedPublicEventId,
         theme,
         toasts,
+        toastHistory,
 
         // Setters & Actions
         setCurrentView,
@@ -835,6 +855,7 @@ export const BookingProvider = ({ children }) => {
         schedulePost,
         cancelPost,
         refreshPosts,
+        refreshAll,
         repostNow,
         addSocialAccount,
         removeSocialAccount,

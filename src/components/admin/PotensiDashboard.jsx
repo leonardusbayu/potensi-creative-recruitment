@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useBooking } from "../../context/BookingContext";
 import { JobPostComposer } from "./JobPostComposer";
 import { SocialCalendarView } from "./SocialCalendarView";
@@ -7,19 +7,36 @@ import { SocialAccountsView } from "./SocialAccountsView";
 import { HRSettingsView } from "./HRSettingsView";
 import { AnalyticsView } from "./AnalyticsView";
 import { OpenRouterSettingsView } from "./OpenRouterSettingsView";
+import { SetupWizard } from "./SetupWizard";
 import { Megaphone, Calendar, Users, TrendingUp, Link2, Settings, BarChart3, Cpu } from "lucide-react";
 
 export const PotensiDashboard = () => {
-  const { jobs, applicants, bookings, socialAccounts } = useBooking();
+  const [healthDown, setHealthDown] = useState(false);
+  const { jobs, applicants, bookings, socialAccounts, refreshAll } = useBooking();
   const [sub, setSub] = useState("overview");
+
+  useEffect(() => {
+    fetch("/api/health").then((r) => r.json()).then((j) => { if (!j.ok) setHealthDown(true); }).catch(() => setHealthDown(true));
+  }, []);
 
   const analyzed = applicants.filter((a) => a.status === "analyzed").length;
   const invited = applicants.filter((a) => a.status === "invited").length;
   const pending = applicants.filter((a) => a.status === "pending").length;
   const hired = applicants.filter((a) => a.status === "hired").length;
 
+  useEffect(() => {
+    const t = setInterval(() => { refreshAll(); }, 30000);
+    return () => clearInterval(t);
+  }, [refreshAll]);
+
   return (
     <div style={{ padding: "1.5rem" }}>
+      {healthDown && (
+        <div role="alert" style={{ marginBottom: 12, padding: "10px 14px", background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 10, color: "#b91c1c", fontSize: 13, fontWeight: 600 }}>
+          Server tidak terjangkau — data mungkin tidak sinkron. Coba lagi nanti.
+        </div>
+      )}
+      <SetupWizard />
       <div style={{ background: "linear-gradient(135deg, #4F46E5 0%, #EC4899 100%)", borderRadius: 16, padding: "20px 24px", color: "#fff", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
         <div>
           <h1 style={{ fontSize: "1.4rem", fontWeight: 800, display: "flex", gap: 8, alignItems: "center" }}><Megaphone size={22} /> Potensi Creative Recruitment</h1>

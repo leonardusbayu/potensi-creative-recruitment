@@ -78,7 +78,7 @@ export const PipelineView = () => {
         </div>
       </div>
 
-      <div style={{
+      <div className="pipeline-grid" style={{
         display: 'grid',
         gridTemplateColumns: 'repeat(6, 1fr)',
         gap: '1rem',

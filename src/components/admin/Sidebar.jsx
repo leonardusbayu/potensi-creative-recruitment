@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useBooking } from '../../context/BookingContext';
 import { 
   CalendarDays, 
@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 
 export const Sidebar = () => {
+  const [mobileOpen, setMobileOpen] = useState(false);
   const { 
     activeAdminTab, 
     setActiveAdminTab, 
@@ -36,7 +37,9 @@ export const Sidebar = () => {
   ];
 
   return (
-    <aside style={{
+    <>
+    <div className={"admin-sidebar-backdrop" + (mobileOpen ? " open" : "")} onClick={() => setMobileOpen(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.45)', zIndex: 999 }} />
+    <aside className={"admin-sidebar" + (mobileOpen ? " open" : "")} style={{
       width: '270px',
       backgroundColor: 'var(--bg-surface)',
       borderRight: '1px solid var(--border-default)',
@@ -106,7 +109,7 @@ export const Sidebar = () => {
           return (
             <button
               key={item.id}
-              onClick={() => setActiveAdminTab(item.id)}
+                          onClick={() => { setActiveAdminTab(item.id); setMobileOpen(false); }}
               style={{
                 width: '100%',
                 padding: '0.65rem 0.85rem',
@@ -154,5 +157,6 @@ export const Sidebar = () => {
         <div style={{ marginTop: '2px' }}>Mode Enterprise Aktif</div>
       </div>
     </aside>
+    </>
   );
 };

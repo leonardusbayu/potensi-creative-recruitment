@@ -109,6 +109,48 @@ app.use("*", logger());
 
 app.get("/api/health", (c) => c.json({ ok: true, service: "calendarjet-hr" }));
 
+app.get("/api/health/detail", async (c) => {
+  if (!requireAdmin(c.env.ADMIN_TOKEN, c.req.header("authorization"))) return c.json({ error: "unauthorized" }, 401);
+  const checks: Record<string, unknown> = { db: false, r2: false, resend: !!c.env.RESEND_API_KEY, openrouter: false, webhooks: !!c.env.WEBHOOK_SECRET };
+  try {
+    await c.env.DB.prepare("SELECT 1").first();
+    checks.db = true;
+  } catch {}
+  try {
+    await c.env.CV_BUCKET.head(".__probe__");
+    checks.r2 = true;
+  } catch {
+    checks.r2 = "unknown";
+  }
+  const orKey = await getOpenRouterKey(c.env);
+  if (orKey) {
+    try {
+      const r = await fetch("https://openrouter.ai/api/v1/models", { headers: { authorization: `Bearer ${orKey}` } });
+      checks.openrouter = r.ok;
+    } catch {
+      checks.openrouter = false;
+    }
+  }
+  return c.json({ ok: checks.db === true, checks });
+});
+
+app.get("/api/audit-log", async (c) => {
+  if (!requireAdmin(c.env.ADMIN_TOKEN, c.req.header("authorization"))) return c.json({ error: "unauthorized" }, 401);
+  const { results } = await c.env.DB.prepare(
+    "SELECT id, applicant_id, type, to_email, subject, status, sent_at FROM email_logs ORDER BY sent_at DESC LIMIT 100"
+  ).all();
+  return c.json({ log: results });
+});
+
+app.get("/api/export/:table", async (c) => {
+  if (!requireAdmin(c.env.ADMIN_TOKEN, c.req.header("authorization"))) return c.json({ error: "unauthorized" }, 401);
+  const table = c.req.param("table");
+  const allowed = ["applicants", "bookings", "jobs", "social_posts"];
+  if (!allowed.includes(table)) return c.json({ error: "invalid table" }, 400);
+  const { results } = await c.env.DB.prepare(`SELECT * FROM ${table} LIMIT 5000`).all();
+  return c.json({ table, rows: results });
+});
+
 app.get("/api/jobs", async (c) => {
   const { results } = await c.env.DB.prepare("SELECT * FROM jobs ORDER BY created_at DESC").all();
   return c.json({ jobs: results });
@@ -493,6 +535,14 @@ app.post("/api/bookings/:id/reschedule", async (c) => {
   const startMins = Number(time.split(":")[0]) * 60 + Number(time.split(":")[1]);
   const endTime = `${String(Math.floor((startMins + 30) / 60)).padStart(2, "0")}:${String((startMins + 30) % 60).padStart(2, "0")}`;
   await c.env.DB.prepare("UPDATE bookings SET date = ?, time = ?, end_time = ? WHERE id = ?").bind(date, time, endTime, id).run();
+  const appRow = (await c.env.DB.prepare("SELECT name, email FROM applicants WHERE id = ?").bind(booking.applicant_id).first()) as any;
+  if (appRow) {
+    const html = `<div style="font-family:system-ui;padding:24px"><h2>Hai ${escapeHtml(appRow.name)},</h2><p>Jadwal interview Anda berhasil <b>diubah</b>.</p><p>Jadwal baru: <b>${date}</b> pukul <b>${time} WIB</b></p><p>Jika jadwal ini tidak cocok, ubah lagi atau batalkan dari halaman status lamaran Anda.</p><p>- HR Team</p></div>`;
+    await sendEmail(c.env, appRow.email, "Konfirmasi Perubahan Jadwal Interview", html);
+    await c.env.DB.prepare("INSERT INTO email_logs (id, applicant_id, type, to_email, subject, status, sent_at) VALUES (?, ?, ?, ?, ?, ?, ?)")
+      .bind(`em_${Date.now()}_rs`, booking.applicant_id, "reschedule", appRow.email, "Konfirmasi Perubahan Jadwal Interview", "sent", new Date().toISOString())
+      .run();
+  }
   return c.json({ ok: true, id, date, time, endTime });
 });
 
@@ -507,6 +557,14 @@ app.post("/api/bookings/:id/cancel", async (c) => {
   if (booking.applicant_id !== payload.applicantId) return c.json({ error: "not your booking" }, 403);
   await c.env.DB.prepare("UPDATE bookings SET status = 'cancelled' WHERE id = ?").bind(id).run();
   await c.env.DB.prepare("UPDATE applicants SET status = 'invited' WHERE id = ?").bind(payload.applicantId).run();
+  const appRow = (await c.env.DB.prepare("SELECT name, email FROM applicants WHERE id = ?").bind(payload.applicantId).first()) as any;
+  if (appRow) {
+    const html = `<div style="font-family:system-ui;padding:24px"><h2>Hai ${escapeHtml(appRow.name)},</h2><p>Jadwal interview Anda pada booking <b>#${id.slice(0, 12)}</b> telah <b>dibatalkan</b>.</p><p>Anda masih diundang untuk interview — silakan pilih jadwal baru dari email undangan Anda (berlaku 7 hari).</p><p>- HR Team</p></div>`;
+    await sendEmail(c.env, appRow.email, "Konfirmasi Pembatalan Jadwal Interview", html);
+    await c.env.DB.prepare("INSERT INTO email_logs (id, applicant_id, type, to_email, subject, status, sent_at) VALUES (?, ?, ?, ?, ?, ?, ?)")
+      .bind(`em_${Date.now()}_cl`, booking.applicant_id, "cancel", appRow.email, "Konfirmasi Pembatalan Jadwal Interview", "sent", new Date().toISOString())
+      .run();
+  }
   return c.json({ ok: true, id, status: "cancelled" });
 });
 
@@ -707,6 +765,37 @@ export default {
         "UPDATE social_posts SET status = ?, published_at = ?, error = ?, post_ids = ? WHERE id = ?"
       )
         .bind(status, res.ok ? now : null, res.error || null, JSON.stringify(res.postIds || {}), post.id)
+        .run();
+      if (!res.ok) {
+        const hrEmail = await getSetting(env, "hr_alert_email");
+        if (hrEmail) {
+          const sent = await sendEmail(env, hrEmail, "[Potensi Creative] Post Gagal Terbit", `<div style="font-family:system-ui;padding:16px"><p>Post <b>${post.id}</b> gagal diterbitkan.</p><p>Alasan: ${String(res.error || "unknown").replace(/</g, "&lt;")}</p><p>Buka dashboard → Kalender Post untuk periksa.</p></div>`);
+          if (sent) console.log("[Cron] HR notified of failed post", post.id);
+        }
+      }
+    }
+
+    const queuedEmails = (await env.DB.prepare(
+      "SELECT id, applicant_id, type, to_email, subject FROM email_logs WHERE status = 'queued' LIMIT 10"
+    ).all()).results as any[];
+    for (const em of queuedEmails) {
+      const row = (await env.DB.prepare("SELECT email, name FROM applicants WHERE id = ?").bind(em.applicant_id).first()) as any;
+      if (!row) {
+        await env.DB.prepare("UPDATE email_logs SET status = 'failed' WHERE id = ?").bind(em.id).run();
+        continue;
+      }
+      const tpl = (await env.DB.prepare("SELECT subject, body FROM email_templates WHERE type = ?").bind(em.type).first()) as any;
+      let html = tpl?.body || "";
+      let subject = tpl?.subject || em.subject;
+      if (em.type === "invite") {
+        const token = await signJwt({ applicantId: em.applicant_id, exp: Date.now() + 7 * 24 * 60 * 60 * 1000 }, env.JWT_SECRET);
+        html = buildInviteEmail(env.APP_URL, token, row.name).html;
+      } else if (em.type === "rejection") {
+        html = buildRejectionEmail(row.name, []).html;
+      }
+      const ok = html ? await sendEmail(env, row.email, subject, html) : false;
+      await env.DB.prepare("UPDATE email_logs SET status = ?, sent_at = ? WHERE id = ?")
+        .bind(ok ? "sent" : "failed", new Date().toISOString(), em.id)
         .run();
     }
   },

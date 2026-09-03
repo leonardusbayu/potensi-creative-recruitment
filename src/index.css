@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=Inter:wght@300;400;500;600;700&display=swap');
+﻿@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=Inter:wght@300;400;500;600;700&display=swap');
 
 :root {
   --font-sans: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
@@ -422,5 +422,34 @@ button {
     width: 100% !important;
     border-right: none !important;
     border-bottom: 1px solid var(--border-default);
+  }
+}
+
+/* Responsive admin layout */
+@media (max-width: 960px) {
+  .admin-sidebar {
+    position: fixed;
+    left: 0; top: 0; bottom: 0;
+    z-index: 1000;
+    transform: translateX(-100%);
+    transition: transform 200ms ease-out;
+    box-shadow: 4px 0 24px rgba(0,0,0,0.18);
+  }
+  .admin-sidebar.open {
+    transform: translateX(0);
+  }
+  .admin-sidebar-backdrop {
+    display: block !important;
+  }
+}
+.admin-sidebar-backdrop { display: none; }
+/* Pipeline mobile stack */
+@media (max-width: 960px) {
+  .pipeline-grid {
+    grid-template-columns: 1fr !important;
+    display: grid;
+  }
+  .pipeline-grid > div {
+    min-width: 0 !important;
   }
 }

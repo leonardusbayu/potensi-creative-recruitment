@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useBooking } from '../../context/BookingContext';
 import { CalendarWidget } from './CalendarWidget';
 import { TimeSlotPicker } from './TimeSlotPicker';
@@ -31,6 +31,11 @@ export const PublicBookingView = () => {
     markApplicantBooked,
     addD1Booking
   } = useBooking();
+
+  useEffect(() => {
+    const saved = localStorage.getItem('calendarjet_theme');
+    if (saved === 'dark') document.documentElement.classList.add('dark');
+  }, []);
 
   const search = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : new URLSearchParams();
   const jobSlug = search.get("job");
