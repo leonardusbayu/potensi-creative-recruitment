@@ -3,7 +3,7 @@ import { cors } from "hono/cors";
 import { logger } from "hono/logger";
 import { analyzeCvText } from "./cvAnalyzer";
 import { analyzeWithLlm, analyzeWithFallback } from "./llm";
-import { buildInviteEmail, buildRejectionEmail } from "./email";
+import { buildInviteEmail, buildRejectionEmail, escapeHtml } from "./email";
 import { publishToMeta } from "./meta";
 import { publishToTikTok } from "./tiktok";
 
@@ -12,6 +12,7 @@ type Bindings = {
   CV_BUCKET: any;
   CV_QUEUE: any;
   APP_URL: string;
+  MEDIA_URL?: string;
   JWT_SECRET: string;
   ADMIN_TOKEN: string;
   RESEND_API_KEY?: string;
@@ -195,7 +196,8 @@ app.post("/api/social/upload", async (c) => {
   const id = `m_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
   const r2Key = `media/${id}-${sanitizeFileName(file.name)}`;
   await c.env.CV_BUCKET.put(r2Key, await file.arrayBuffer(), { httpMetadata: { contentType: file.type } });
-  const url = `${c.env.APP_URL}/api/media/${r2Key.split("/")[1]}`;
+  const mediaBase = c.env.MEDIA_URL || c.env.APP_URL;
+  const url = `${mediaBase}/api/media/${r2Key.split("/")[1]}`;
   return c.json({ url, key: r2Key });
 });
 
@@ -301,6 +303,29 @@ app.post("/api/apply", async (c) => {
   return c.json({ applicantId, status: "pending" });
 });
 
+app.post("/api/apply/sync", async (c) => {
+  if (!requireAdmin(c.env.ADMIN_TOKEN, c.req.header("authorization"))) return c.json({ error: "unauthorized" }, 401);
+  const b = await c.req.json<{ id?: string; jobId: string; name: string; email: string; wa?: string; tiktok?: string; ig?: string; appliedAt?: string }>();
+  if (!b.jobId || !b.email || !b.name) return c.json({ error: "jobId, email, name required" }, 400);
+  const email = String(b.email).trim().toLowerCase();
+  const jobExists = (await c.env.DB.prepare("SELECT id FROM jobs WHERE id = ?").bind(b.jobId).first()) as any;
+  if (!jobExists) return c.json({ error: "job not found" }, 404);
+  const existing = (await c.env.DB.prepare("SELECT id FROM applicants WHERE job_id = ? AND email = ?").bind(b.jobId, email).first()) as any;
+  if (existing) {
+    await c.env.DB.prepare("UPDATE applicants SET name = ?, wa = ?, tiktok = ?, ig = ? WHERE id = ?")
+      .bind(String(b.name).trim().slice(0, 120), (b.wa || "").slice(0, 20), (b.tiktok || "").slice(0, 50), (b.ig || "").slice(0, 50), existing.id)
+      .run();
+    return c.json({ applicantId: existing.id, merged: true });
+  }
+  const applicantId = `app_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+  await c.env.DB.prepare(
+    "INSERT INTO applicants (id, job_id, name, email, wa, tiktok, ig, cv_text, status, applied_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)"
+  )
+    .bind(applicantId, b.jobId, String(b.name).trim().slice(0, 120), email, (b.wa || "").slice(0, 20), (b.tiktok || "").slice(0, 50), (b.ig || "").slice(0, 50), "[synced offline — CV file tidak tersedia]", b.appliedAt || new Date().toISOString())
+    .run();
+  return c.json({ applicantId, created: true });
+});
+
 app.get("/api/applicants", async (c) => {
   if (!requireAdmin(c.env.ADMIN_TOKEN, c.req.header("authorization"))) return c.json({ error: "unauthorized" }, 401);
   const jobId = c.req.query("jobId");
@@ -385,7 +410,14 @@ app.post("/api/email/:type/:applicantId", async (c) => {
   const row = (await c.env.DB.prepare("SELECT * FROM applicants WHERE id = ?").bind(applicantId).first()) as any;
   if (!row) return c.json({ error: "not found" }, 404);
   if (type === "reject") {
-    const rej = buildRejectionEmail(row.name, []);
+    const latest = (await c.env.DB.prepare("SELECT missing_skills FROM cv_analyses WHERE applicant_id = ? ORDER BY created_at DESC").bind(applicantId).first()) as any;
+    let missingSkills: string[] = [];
+    try {
+      missingSkills = latest?.missing_skills ? JSON.parse(latest.missing_skills) : [];
+    } catch {
+      missingSkills = [];
+    }
+    const rej = buildRejectionEmail(row.name, missingSkills);
     const sent = await sendEmail(c.env, row.email, rej.subject, rej.html);
     await c.env.DB.prepare("INSERT INTO email_logs (id, applicant_id, type, to_email, subject, status, sent_at) VALUES (?, ?, ?, ?, ?, ?, ?)")
       .bind(`em_${Date.now()}_${Math.random().toString(36).slice(2, 5)}`, applicantId, "rejection", row.email, rej.subject, sent ? "sent" : "queued", new Date().toISOString())
@@ -492,8 +524,9 @@ app.post("/api/psychotest/send/:applicantId", async (c) => {
   const sep = psyUrl.includes("?") ? "&" : "?";
   const link = `${psyUrl}${sep}applicantId=${encodeURIComponent(applicantId)}`;
   const tpl = (await c.env.DB.prepare("SELECT subject, body FROM email_templates WHERE type = 'psychotest'").first()) as any;
-  const subject = tpl?.subject || "Undangan Psikotes — Potensi Creative";
-  const body = tpl?.body || `<div style="font-family:system-ui;padding:24px"><h2>Hai ${row.name},</h2><p>Selamat! Anda lolos interview. Silakan ikuti psikotes online berikut:</p><p><a href="${link}" style="background:#4F46E5;color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none">Mulai Psikotes</a></p><p>— HR Team</p></div>`;
+  const safeName = escapeHtml(row.name);
+  const subject = tpl?.subject || "Undangan Psikotes - Potensi Creative";
+  const body = tpl?.body || `<div style="font-family:system-ui;padding:24px"><h2>Hai ${safeName},</h2><p>Selamat! Anda lolos interview. Silakan ikuti psikotes online berikut:</p><p><a href="${link}" style="background:#4F46E5;color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none">Mulai Psikotes</a></p><p>- HR Team</p></div>`;
   const sent = await sendEmail(c.env, row.email, subject, body);
   await c.env.DB.prepare("INSERT INTO email_logs (id, applicant_id, type, to_email, subject, status, sent_at) VALUES (?, ?, ?, ?, ?, ?, ?)")
     .bind(`em_${Date.now()}_${Math.random().toString(36).slice(2, 5)}`, applicantId, "psychotest", row.email, subject, sent ? "sent" : "queued", new Date().toISOString())
@@ -515,16 +548,17 @@ app.post("/api/psychotest/result/:applicantId", async (c) => {
 app.post("/api/psychotest/callback", async (c) => {
   const expected = c.env.WEBHOOK_SECRET;
   const provided = c.req.header("x-webhook-secret") || "";
-  if (expected && provided !== expected) return c.json({ error: "unauthorized" }, 401);
+  if (!expected || provided !== expected) return c.json({ error: "unauthorized" }, 401);
   const body = await c.req.json<{ applicantId?: string; email?: string; score?: number; notes?: string }>();
   if (!body.email && !body.applicantId) return c.json({ error: "email or applicantId required" }, 400);
   let row: any;
   if (body.applicantId) {
-    row = (await c.env.DB.prepare("SELECT id FROM applicants WHERE id = ?").bind(body.applicantId).first()) as any;
+    row = (await c.env.DB.prepare("SELECT id, status FROM applicants WHERE id = ?").bind(body.applicantId).first()) as any;
   } else {
-    row = (await c.env.DB.prepare("SELECT id FROM applicants WHERE email = ?").bind((body.email || "").toLowerCase()).first()) as any;
+    row = (await c.env.DB.prepare("SELECT id, status FROM applicants WHERE email = ?").bind((body.email || "").toLowerCase()).first()) as any;
   }
   if (!row) return c.json({ error: "applicant not found" }, 404);
+  if (row.status !== "test_sent") return c.json({ error: `applicant not awaiting psychotest (status: ${row.status})` }, 409);
   await c.env.DB.prepare("UPDATE applicants SET psychotest_score = ?, psychotest_notes = ?, status = 'tested' WHERE id = ?")
     .bind(body.score ?? null, body.notes ?? "", row.id)
     .run();
@@ -651,7 +685,7 @@ export default {
   async scheduled(event: { cron?: string; scheduledTime?: number }, env: Bindings, ctx: { waitUntil(p: Promise<unknown>): void }) {
     const now = new Date().toISOString();
     const { results } = await env.DB.prepare(
-      "SELECT * FROM social_posts WHERE status = 'scheduled' AND scheduled_at <= ? LIMIT 20"
+      "SELECT * FROM social_posts WHERE status = 'scheduled' AND scheduled_at <= ? ORDER BY scheduled_at ASC LIMIT 20"
     ).bind(now).all() as any;
     const accounts = (await env.DB.prepare("SELECT * FROM social_accounts").all()).results as any[];
     for (const post of results) {

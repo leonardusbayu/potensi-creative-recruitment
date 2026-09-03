@@ -75,6 +75,7 @@ export const PublicBookingView = () => {
 
   const handleBookingSubmit = async (bookingFormData) => {
     let verifiedApplicantId = null;
+    let d1Booking = null;
     if (isInterview && token) {
       try {
         const r = await fetch("/api/bookings/interview", {
@@ -85,7 +86,8 @@ export const PublicBookingView = () => {
         const j = await r.json();
         if (!r.ok) throw new Error(j.error ?? "token invalid");
         verifiedApplicantId = j.applicantId;
-        if (j.booking) addD1Booking(j.booking);
+        d1Booking = j.booking ?? null;
+        if (d1Booking) addD1Booking(d1Booking);
         try {
           const payload = JSON.parse(atob(token.split(".")[0]));
           verifiedApplicantId = payload.applicantId ?? verifiedApplicantId;
@@ -96,9 +98,21 @@ export const PublicBookingView = () => {
       }
     }
     if (isInterview) {
-      // Interview bookings live in D1 (authoritative). Skip localStorage createBooking to avoid double record.
       if (verifiedApplicantId) markApplicantBooked(verifiedApplicantId);
-      setConfirmedBooking({ id: "d1", date: selectedDate, time: selectedTime, inviteeName: bookingFormData.inviteeName });
+      setConfirmedBooking({
+        id: d1Booking?.id || "d1",
+        eventId: "evt-potensi-interview",
+        eventTitle: d1Booking?.eventTitle || "Interview Live Streamer",
+        date: selectedDate,
+        time: selectedTime,
+        endTime: d1Booking?.endTime,
+        inviteeName: d1Booking?.inviteeName || bookingFormData.inviteeName,
+        inviteeEmail: d1Booking?.inviteeEmail || bookingFormData.inviteeEmail,
+        meetingType: "google_meet",
+        meetingLink: d1Booking?.meetingLink || "",
+        status: "confirmed",
+        crmStage: "booked",
+      });
       return;
     }
     const created = createBooking({

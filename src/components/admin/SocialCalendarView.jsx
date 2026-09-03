@@ -1,13 +1,17 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useBooking } from "../../context/BookingContext";
 import { Calendar as CalendarIcon, RefreshCw, CheckCircle2, XCircle, Send, Film, Camera, Share2, AtSign, Repeat } from "lucide-react";
 
 const PLATFORM_ICON = { tiktok: Film, instagram: Camera, facebook: Share2, x: AtSign, threads: Repeat };
 
 export const SocialCalendarView = () => {
-  const { socialPosts, cancelPost, repostNow, showToast } = useBooking();
+  const { socialPosts, cancelPost, repostNow, refreshPosts, showToast } = useBooking();
   const [filter, setFilter] = useState("all");
   const [showNextDays, setShowNextDays] = useState(30);
+
+  useEffect(() => {
+    refreshPosts().then((ok) => { if (!ok) showToast("Status post belum tersinkron — set Admin Token lalu refresh", "info"); });
+  }, []);
 
   const now = new Date();
   const year = now.getFullYear();

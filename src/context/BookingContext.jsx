@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+﻿import React, { createContext, useContext, useState, useEffect } from 'react';
 import { 
   initialEventTypes, 
   initialAvailability, 
@@ -175,18 +175,17 @@ export const BookingProvider = ({ children }) => {
         const unsynced = applicants.filter((a) => a.pendingSync);
         for (const app of unsynced) {
           try {
-            const fd = new FormData();
-            fd.append("jobId", app.job_id);
-            fd.append("name", app.name);
-            fd.append("email", app.email);
-            fd.append("wa", app.wa || "");
-            fd.append("tiktok", app.tiktok || "");
-            fd.append("ig", app.ig || "");
-            fd.append("cv", new File([new Blob(["pending-sync-no-cv-file"])], `${app.id}.txt`, { type: "text/plain" }));
-            const r = await fetch("/api/apply", { method: "POST", body: fd });
+            const r = await fetch("/api/apply/sync", {
+              method: "POST",
+              headers,
+              body: JSON.stringify({ jobId: app.job_id, name: app.name, email: app.email, wa: app.wa, tiktok: app.tiktok, ig: app.ig, appliedAt: app.applied_at }),
+            });
             if (r.ok) {
               const j = await r.json().catch(() => ({}));
-              setApplicants((prev) => prev.map((a) => a.id === app.id ? { ...a, id: j.applicantId || app.id, pendingSync: false } : a));
+              const newId = j.applicantId || app.id;
+              setApplicants((prev) => prev.map((a) => a.id === app.id ? { ...a, id: newId, pendingSync: false } : a));
+            } else if (r.status === 404) {
+              setApplicants((prev) => prev.filter((a) => a.id !== app.id));
             }
           } catch {}
         }
@@ -432,7 +431,7 @@ export const BookingProvider = ({ children }) => {
       if (r.ok) {
         const j = await r.json();
         setApplicants((prev) => prev.map((a) => a.id === applicantId ? { ...a, status: "analyzed", score: j.analysis.score.overall, ai_summary: j.analysis.aiSummary } : a));
-        showToast(`AI score: ${j.analysis.score.overall} — HR tentukan undang/tolak`, "info");
+        showToast(`AI score: ${j.analysis.score.overall} â€” HR tentukan undang/tolak`, "info");
         return j.analysis;
       }
     } catch {}
@@ -442,8 +441,8 @@ export const BookingProvider = ({ children }) => {
     let liveExp = /live|host|mc/i.test(cvText) ? 25 : 10;
     let bonus = /10k/i.test(a.tiktok + a.ig) ? 15 : /1k/i.test(a.tiktok + a.ig) ? 7 : 0;
     const overall = Math.min(100, liveExp + 15 + 12 + bonus);
-    setApplicants((prev) => prev.map((x) => x.id === applicantId ? { ...x, status: "analyzed", score: overall, ai_summary: `[ESTIMASI LOKAL — bukan LLM] Skor ${overall} (bonus ${bonus}). Server tidak terjangkau; jalankan Analisis ulang saat online.` } : x));
-    showToast(`Skor lokal ${overall} (bukan LLM) — jalankan Analisis ulang saat online`, "warning");
+    setApplicants((prev) => prev.map((x) => x.id === applicantId ? { ...x, status: "analyzed", score: overall, ai_summary: `[ESTIMASI LOKAL â€” bukan LLM] Skor ${overall} (bonus ${bonus}). Server tidak terjangkau; jalankan Analisis ulang saat online.` } : x));
+    showToast(`Skor lokal ${overall} (bukan LLM) â€” jalankan Analisis ulang saat online`, "warning");
   };
 
   const d1BookingsNormalized = d1Bookings.map((b) => ({
@@ -482,7 +481,7 @@ export const BookingProvider = ({ children }) => {
       sent = !!j.sent;
     } catch {}
     setApplicants((prev) => prev.map((a) => a.id === applicantId ? { ...a, status: "invited" } : a));
-    showToast(sent ? "Email undangan interview terkirim ke pelamar" : "Pelamar diundang (email belum terkirim — cek RESEND_API_KEY)", sent ? "success" : "info");
+    showToast(sent ? "Email undangan interview terkirim ke pelamar" : "Pelamar diundang (email belum terkirim â€” cek RESEND_API_KEY)", sent ? "success" : "info");
     return sent;
   };
 
@@ -494,7 +493,7 @@ export const BookingProvider = ({ children }) => {
       sent = !!j.sent;
     } catch {}
     setApplicants((prev) => prev.map((a) => a.id === applicantId ? { ...a, status: "rejected" } : a));
-    showToast(sent ? "Email penolakan terkirim" : "Lamaran ditolak (email belum terkirim — cek RESEND_API_KEY)", sent ? "success" : "info");
+    showToast(sent ? "Email penolakan terkirim" : "Lamaran ditolak (email belum terkirim â€” cek RESEND_API_KEY)", sent ? "success" : "info");
   };
 
   const markApplicantBooked = (applicantId) => {
@@ -510,9 +509,13 @@ export const BookingProvider = ({ children }) => {
     try { fetch(`/api/applicants/${applicantId}/status`, { method: "POST", headers: adminHeaders(), body: JSON.stringify({ status: "interviewed" }) }); } catch {}
   };
 
-  const moveApplicantStatus = (applicantId, newStatus) => {
+  const moveApplicantStatus = async (applicantId, newStatus) => {
     setApplicants((prev) => prev.map((a) => (a.id === applicantId ? { ...a, status: newStatus } : a)));
     try { fetch(`/api/applicants/${applicantId}/status`, { method: "POST", headers: adminHeaders(), body: JSON.stringify({ status: newStatus }) }); } catch {}
+    if (newStatus === "invited") await inviteToInterview(applicantId);
+    if (newStatus === "test_sent") await sendPsychotest(applicantId);
+    if (newStatus === "hired") await hireApplicant(applicantId);
+    if (newStatus === "rejected") await rejectApplication(applicantId);
   };
 
   const hireApplicant = async (applicantId) => {
@@ -523,7 +526,7 @@ export const BookingProvider = ({ children }) => {
       sent = !!j.sent;
     } catch {}
     setApplicants((prev) => prev.map((a) => a.id === applicantId ? { ...a, status: "hired", hiredAt: new Date().toISOString() } : a));
-    showToast(sent ? "Offer email terkirim — kandidat diterima" : "Kandidat ditandai hired (offer email belum terkirim)", sent ? "success" : "info");
+    showToast(sent ? "Offer email terkirim â€” kandidat diterima" : "Kandidat ditandai hired (offer email belum terkirim)", sent ? "success" : "info");
   };
 
   const sendPsychotest = async (applicantId) => {
@@ -534,7 +537,7 @@ export const BookingProvider = ({ children }) => {
       sent = !!j.sent;
     } catch {}
     setApplicants((prev) => prev.map((a) => a.id === applicantId ? { ...a, status: "test_sent", psychotestSentAt: new Date().toISOString() } : a));
-    showToast(sent ? "Email psikotes terkirim" : "Psikotes ditandai terkirim (email belum terkirim — cek RESEND_API_KEY / URL)", sent ? "success" : "info");
+    showToast(sent ? "Email psikotes terkirim" : "Psikotes ditandai terkirim (email belum terkirim â€” cek RESEND_API_KEY / URL)", sent ? "success" : "info");
   };
 
   const recordPsychotestResult = async (applicantId, score, notes) => {
@@ -592,7 +595,7 @@ export const BookingProvider = ({ children }) => {
     let viaPostiz = false;
     const hasAdmin = !!localStorage.getItem("calendarjet_admin_token");
     if (!hasAdmin) {
-      showToast("Post disimpan lokal — set Admin Token dulu agar tersimpan di server & auto-publish", "warning");
+      showToast("Post disimpan lokal â€” set Admin Token dulu agar tersimpan di server & auto-publish", "warning");
     }
     try {
       const r = await fetch("/api/social/posts", {
@@ -605,7 +608,7 @@ export const BookingProvider = ({ children }) => {
         const j = await r.json();
         post.id = j.id || post.id;
       } else if (r.status === 401) {
-        showToast("Admin Token salah/tidak terdaftar — post hanya lokal", "error");
+        showToast("Admin Token salah/tidak terdaftar â€” post hanya lokal", "error");
       }
     } catch {}
     if (viaPostiz) post.status = "queued_postiz";
@@ -617,6 +620,20 @@ export const BookingProvider = ({ children }) => {
     setSocialPosts((prev) => prev.map((p) => (p.id === id ? { ...p, status: "cancelled" } : p)));
     try { fetch(`/api/social/posts/${id}/cancel`, { method: "POST", headers: adminHeaders() }); } catch {}
     showToast("Post dibatalkan", "info");
+  };
+
+  const refreshPosts = async () => {
+    const token = localStorage.getItem("calendarjet_admin_token") || "";
+    if (!token) return false;
+    try {
+      const r = await fetch("/api/social/posts", { headers: { authorization: `Bearer ${token}` } });
+      if (r.ok) {
+        const j = await r.json();
+        if (j.posts?.length) setSocialPosts(j.posts.map(normalizePost));
+        return true;
+      }
+    } catch {}
+    return false;
   };
 
   const repostNow = async (id) => {
@@ -633,7 +650,7 @@ export const BookingProvider = ({ children }) => {
       }
     } catch {
       setSocialPosts((prev) => prev.map((p) => (p.id === id ? { ...p, status: "failed", error: "network error" } : p)));
-      showToast("Gagal publish — cek koneksi", "error");
+      showToast("Gagal publish â€” cek koneksi", "error");
     }
   };
 
@@ -687,9 +704,9 @@ export const BookingProvider = ({ children }) => {
       if (lower.includes('slot') || lower.includes('jadwal') || lower.includes('kosong') || lower.includes('besok')) {
         const upcomingEvent = eventTypes[0];
         reply = `Berdasarkan kalender kerja Anda untuk minggu ini, berikut analisis ketersediaan terbaik:\n\n` +
-          `• **Besok Pagi (10:00 - 11:30 WIB)**: 3 slot kosong tersedia.\n` +
-          `• **Besok Siang (14:30 - 16:30 WIB)**: 4 slot bebas bentrok untuk ${upcomingEvent.title}.\n\n` +
-          `💡 *Tips AI*: Anda memiliki 1 booking besok di jam 10:00. Saya menyarankan slot jam **14:00 WIB** sebagai prioritas tamu berikutnya.`;
+          `â€¢ **Besok Pagi (10:00 - 11:30 WIB)**: 3 slot kosong tersedia.\n` +
+          `â€¢ **Besok Siang (14:30 - 16:30 WIB)**: 4 slot bebas bentrok untuk ${upcomingEvent.title}.\n\n` +
+          `ðŸ’¡ *Tips AI*: Anda memiliki 1 booking besok di jam 10:00. Saya menyarankan slot jam **14:00 WIB** sebagai prioritas tamu berikutnya.`;
       } else if (lower.includes('follow up') || lower.includes('email') || lower.includes('draf') || lower.includes('pesan')) {
         reply = `Berikut draf email tindak lanjut (Follow-up) profesional yang siap dikirim:\n\n` +
           `---\n` +
@@ -702,10 +719,10 @@ export const BookingProvider = ({ children }) => {
         const total = bookings.length;
         const confirmed = bookings.filter(b => b.status === 'confirmed').length;
         const won = bookings.filter(b => b.crmStage === 'won').length;
-        reply = `📊 **Laporan Performa Kalender & CRM:**\n\n` +
-          `• Total Booking Masuk: **${total} Pertemuan**\n` +
-          `• Pertemuan Terjadwal Aktif: **${confirmed} Janji Temu**\n` +
-          `• Deals Won / Selesai: **${won} Klien** (Tingkat Konversi: **${Math.round((won/Math.max(total, 1))*100)}%**)\n\n` +
+        reply = `ðŸ“Š **Laporan Performa Kalender & CRM:**\n\n` +
+          `â€¢ Total Booking Masuk: **${total} Pertemuan**\n` +
+          `â€¢ Pertemuan Terjadwal Aktif: **${confirmed} Janji Temu**\n` +
+          `â€¢ Deals Won / Selesai: **${won} Klien** (Tingkat Konversi: **${Math.round((won/Math.max(total, 1))*100)}%**)\n\n` +
           `Tren menunjukkan jenis acara **"${eventTypes[0]?.title || 'Konsultasi'}"** adalah yang paling diminati.`;
       } else {
         reply = `Saya mengerti permintaan Anda: "${promptText}". Saya dapat membantu Anda mengatur otomatisasi jadwal, memeriksa konflik antrean, membuat draf komunikasi tamu, atau mengoptimalkan konfigurasi slot kalender. Silakan tanyakan hal spesifik!`;
@@ -804,6 +821,7 @@ export const BookingProvider = ({ children }) => {
         addD1Booking,
         schedulePost,
         cancelPost,
+        refreshPosts,
         repostNow,
         addSocialAccount,
         removeSocialAccount,
