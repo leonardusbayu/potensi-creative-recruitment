@@ -160,6 +160,13 @@ app.get("/api/jobs", async (c) => {
   return c.json({ jobs: results });
 });
 
+app.get("/api/jobs/slug/:slug", async (c) => {
+  const slug = c.req.param("slug");
+  const job = (await c.env.DB.prepare("SELECT id, slug, title, description, status FROM jobs WHERE slug = ? AND status = 'published'").bind(slug).first()) as any;
+  if (!job) return c.json({ error: "job not found" }, 404);
+  return c.json({ job });
+});
+
 app.post("/api/jobs", async (c) => {
   if (!requireAdmin(c.env.ADMIN_TOKEN, c.req.header("authorization"))) return c.json({ error: "unauthorized" }, 401);
   const body = await c.req.json<{ title: string; description?: string; criteria?: unknown; slug?: string }>();
@@ -387,6 +394,25 @@ app.post("/api/apply", async (c) => {
   const jobExists = (await c.env.DB.prepare("SELECT id FROM jobs WHERE id = ?").bind(jobId).first()) as any;
   if (!jobExists) return c.json({ error: "job not found" }, 404);
 
+  const extraParts: string[] = [];
+  const extraFields: [string, string][] = [
+    ["usia", "Usia"],
+    ["domisili", "Domisili"],
+    ["pendidikan", "Pendidikan"],
+    ["pengalaman", "Pengalaman Live"],
+    ["portofolio", "Portofolio"],
+    ["tema", "Produk/Tema"],
+    ["alasan", "Alasan"],
+    ["video", "Video Perkenalan"],
+  ];
+  for (const [field, label] of extraFields) {
+    const v = String(form.get(field) ?? "").trim().slice(0, 2000);
+    if (v) extraParts.push(`${label}: ${v}`);
+  }
+  const niches = form.getAll("niche").map((n) => String(n).trim()).filter(Boolean).slice(0, 10);
+  if (niches.length) extraParts.push(`Niche: ${niches.join(", ")}`);
+  const extraNotes = extraParts.join("\n").slice(0, 4000);
+
   const applicantId = `app_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
   const safeName = sanitizeFileName(file.name);
   const r2Key = `cv/${applicantId}-${safeName}`;
@@ -397,9 +423,9 @@ app.post("/api/apply", async (c) => {
   const cvText = (await file.text()).slice(0, 20000);
 
   await c.env.DB.prepare(
-    "INSERT INTO applicants (id, job_id, name, email, wa, tiktok, ig, cv_r2_key, cv_text, status, applied_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+    "INSERT INTO applicants (id, job_id, name, email, wa, tiktok, ig, cv_r2_key, cv_text, status, notes, applied_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
   )
-    .bind(applicantId, jobId, name, email, wa, tiktok, ig, r2Key, cvText, "pending", new Date().toISOString())
+    .bind(applicantId, jobId, name, email, wa, tiktok, ig, r2Key, cvText, "pending", extraNotes, new Date().toISOString())
     .run();
 
   try {

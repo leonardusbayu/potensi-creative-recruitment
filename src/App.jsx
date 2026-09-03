@@ -6,6 +6,8 @@ import { ApiStatusBanner } from './components/common/ApiStatusBanner';
 import { AdminLayout } from './components/admin/AdminLayout';
 import { PublicBookingView } from './components/public/PublicBookingView';
 import { ShareEmbedModal } from './components/admin/ShareEmbedModal';
+import { HostWarriorApplyPage } from './components/public/HostWarriorApplyPage';
+import './styles/hostWarrior.css';
 
 function getCandidateParam() {
   if (typeof window === 'undefined') return null;
@@ -20,26 +22,51 @@ function MainApp() {
   const { currentView } = useBooking();
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
   const candidateParam = getCandidateParam();
+  const isHostWarrior = candidateParam === 'apply';
+
+  React.useEffect(() => {
+    if (!isHostWarrior) return;
+    document.documentElement.classList.add('pc-dark-bg');
+    const obs = new IntersectionObserver((entries) => {
+      entries.forEach((e) => {
+        if (e.isIntersecting) {
+          e.target.classList.add('pc-vis');
+          obs.unobserve(e.target);
+        }
+      });
+    }, { threshold: 0.1, rootMargin: '0px 0px -30px 0px' });
+    document.querySelectorAll('.pc-r').forEach((el) => obs.observe(el));
+    return () => {
+      obs.disconnect();
+      document.documentElement.classList.remove('pc-dark-bg');
+    };
+  }, [isHostWarrior]);
 
   return (
     <div className="app-container">
-      {candidateParam ? (
-        <PublicBookingView />
+      {isHostWarrior ? (
+        <HostWarriorApplyPage jobSlug={new URLSearchParams(window.location.search).get('job')} />
       ) : (
         <>
-          <Header onOpenShareModal={() => setIsShareModalOpen(true)} />
-          {currentView === 'admin' ? (
-            <AdminLayout
-              isShareModalOpen={isShareModalOpen}
-              setIsShareModalOpen={setIsShareModalOpen}
-            />
-          ) : (
+          {candidateParam ? (
             <PublicBookingView />
+          ) : (
+            <>
+              <Header onOpenShareModal={() => setIsShareModalOpen(true)} />
+              {currentView === 'admin' ? (
+                <AdminLayout
+                  isShareModalOpen={isShareModalOpen}
+                  setIsShareModalOpen={setIsShareModalOpen}
+                />
+              ) : (
+                <PublicBookingView />
+              )}
+              <ShareEmbedModal
+                isOpen={isShareModalOpen}
+                onClose={() => setIsShareModalOpen(false)}
+              />
+            </>
           )}
-          <ShareEmbedModal
-            isOpen={isShareModalOpen}
-            onClose={() => setIsShareModalOpen(false)}
-          />
         </>
       )}
       <ToastContainer />

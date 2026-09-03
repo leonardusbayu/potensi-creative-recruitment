@@ -42,15 +42,19 @@ export const JobPostComposer = () => {
     else showToast("Post disimpan", "info");
   };
 
+  const applySlug = jobs[0]?.slug;
   const copyApplyLink = async () => {
-    const link = `${window.location.origin}/?job=${jobs[0]?.slug || "live-streamer-tiktok-2026"}#apply`;
+    if (!applySlug) return showToast("Buat lowongan dulu untuk mendapatkan link apply", "error");
+    const link = `${window.location.origin}/?job=${encodeURIComponent(applySlug)}`;
     try {
       if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(link);
       else { const t = document.createElement("textarea"); t.value = link; document.body.appendChild(t); t.select(); document.execCommand("copy"); document.body.removeChild(t); }
       setCopied(true);
-      showToast("Link apply disalin", "success");
       setTimeout(() => setCopied(false), 2500);
-    } catch { showToast("Gagal menyalin", "error"); }
+      showToast("Link apply disalin", "success");
+    } catch {
+      showToast("Gagal menyalin link", "error");
+    }
   };
 
   return (
@@ -115,8 +119,14 @@ export const JobPostComposer = () => {
       <div style={{ marginTop: 20, background: "var(--bg-surface)", border: "1px dashed var(--border-default)", borderRadius: 12, padding: 16 }}>
         <h3 style={{ fontWeight: 700, fontSize: 14, display: "flex", gap: 8, alignItems: "center" }}><Smartphone size={16} /> Link Apply untuk Calon</h3>
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
-          <code style={{ background: "var(--bg-secondary)", padding: "8px 12px", borderRadius: 8, fontSize: 12, flex: 1 }}>{window.location.origin}/?job={jobs[0]?.slug || "live-streamer-tiktok-2026"}#apply</code>
-          <button onClick={copyApplyLink} style={{ padding: "8px 12px", borderRadius: 8, border: "1px solid var(--border-default)", background: "var(--bg-surface)", display: "flex", gap: 6, alignItems: "center" }}>{copied ? <Check size={14} /> : <Copy size={14} />} {copied ? "Tersalin" : "Salin"}</button>
+          {applySlug ? (
+            <>
+              <code style={{ background: "var(--bg-secondary)", padding: "8px 12px", borderRadius: 8, fontSize: 12, flex: 1 }}>{window.location.origin}/?job={applySlug}</code>
+              <button onClick={copyApplyLink} style={{ padding: "8px 12px", borderRadius: 8, border: "1px solid var(--border-default)", background: "var(--bg-surface)", display: "flex", gap: 6, alignItems: "center" }}>{copied ? <Check size={14} /> : <Copy size={14} />} {copied ? "Tersalin" : "Salin"}</button>
+            </>
+          ) : (
+            <span style={{ fontSize: 13, color: "var(--text-secondary)" }}>Buat lowongan di atas terlebih dulu untuk mendapatkan link apply kandidat.</span>
+          )}
         </div>
       </div>
     </div>

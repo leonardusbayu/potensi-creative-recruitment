@@ -1,12 +1,32 @@
-﻿import React, { useState } from "react";
+﻿import React, { useState, useEffect } from "react";
 import { useBooking } from "../../context/BookingContext";
 import { Upload, Send } from "lucide-react";
 
 export const ApplyForm = ({ jobSlug }) => {
   const { jobs, submitApplication, showToast } = useBooking();
-  const job = jobs.find((j) => j.slug === jobSlug) ?? jobs[0];
+  const [job, setJob] = useState(() => jobs.find((j) => j.slug === jobSlug) ?? null);
+  const [jobStatus, setJobStatus] = useState(job ? "ready" : "loading");
   const [form, setForm] = useState({ name: "", email: "", wa: "", tiktok: "", ig: "", cv: null });
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!jobSlug) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await fetch(`/api/jobs/slug/${encodeURIComponent(jobSlug)}`);
+        if (!r.ok) throw new Error("job not found");
+        const j = await r.json();
+        if (!cancelled && j.job) {
+          setJob(j.job);
+          setJobStatus("ready");
+        }
+      } catch {
+        if (!cancelled && !job) setJobStatus("notfound");
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [jobSlug]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -38,7 +58,8 @@ export const ApplyForm = ({ jobSlug }) => {
     }
   };
 
-  if (!job) return <div style={{ padding: 24 }}>No job found â€” HR belum buat lowongan</div>;
+  if (jobStatus === "loading") return <div style={{ padding: 24, textAlign: "center", color: "var(--text-secondary)" }}>Memuat lowonganâ€¦</div>;
+  if (!job) return <div style={{ padding: 24 }}>Lowongan tidak ditemukan â€” tautan tidak valid atau lowongan sudah ditutup</div>;
 
   return (
     <div style={{ maxWidth: 640, margin: "2rem auto", padding: 20, background: "var(--bg-surface)", border: "1px solid var(--border-default)", borderRadius: 12 }}>

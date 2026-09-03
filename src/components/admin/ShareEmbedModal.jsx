@@ -13,15 +13,21 @@ import {
 } from 'lucide-react';
 
 export const ShareEmbedModal = ({ isOpen, onClose }) => {
-  const { brandSettings, eventTypes, showToast } = useBooking();
-  const [activeTab, setActiveTab] = useState('direct'); // 'direct' | 'iframe' | 'popup'
+  const { brandSettings, eventTypes, jobs, showToast } = useBooking();
+  const [activeTab, setActiveTab] = useState('direct');
   const [selectedEventId, setSelectedEventId] = useState('all');
+  const [selectedJobId, setSelectedJobId] = useState(jobs[0]?.id || '');
   const [copiedType, setCopiedType] = useState(null);
 
   if (!isOpen) return null;
 
   const domain = brandSettings.domainCustom || 'calendarjet.me';
+  const origin = typeof window !== 'undefined' ? window.location.origin : `https://${domain}`;
   const selectedEvent = eventTypes.find((e) => e.id === selectedEventId);
+  const selectedJob = jobs.find((j) => j.id === selectedJobId) || jobs[0];
+  const applyUrl = selectedJob
+    ? `${origin}/?job=${encodeURIComponent(selectedJob.slug)}`
+    : `${origin}/`;
   const targetUrl = selectedEventId === 'all'
     ? `https://${domain}`
     : `https://${domain}/${selectedEvent?.slug || 'booking'}`;
@@ -51,6 +57,11 @@ export const ShareEmbedModal = ({ isOpen, onClose }) => {
 
   const shareWhatsApp = () => {
     const text = encodeURIComponent(`Halo, silakan pilih jadwal pertemuan yang sesuai dengan Anda melalui tautan kalender resmi saya berikut ini:\n\n${targetUrl}`);
+    window.open(`https://api.whatsapp.com/send?text=${text}`, '_blank');
+  };
+
+  const shareApplyWhatsApp = () => {
+    const text = encodeURIComponent(`Halo! Kami sedang membuka lowongan ${selectedJob?.title || ''}. Silakan isi data dan unggah CV Anda melalui tautan resmi berikut:\n\n${applyUrl}`);
     window.open(`https://api.whatsapp.com/send?text=${text}`, '_blank');
   };
 
@@ -90,6 +101,24 @@ export const ShareEmbedModal = ({ isOpen, onClose }) => {
           </select>
         </div>
 
+        {jobs.length > 0 && (
+          <div style={{ marginBottom: '1.25rem' }}>
+            <label className="form-label" style={{ fontSize: '0.8rem' }}>Lowongan untuk Form Lamaran:</label>
+            <select
+              value={selectedJob?.id || ''}
+              onChange={(e) => setSelectedJobId(e.target.value)}
+              className="form-select"
+              style={{ fontSize: '0.85rem' }}
+            >
+              {jobs.map((job) => (
+                <option key={job.id} value={job.id}>
+                  {job.title} (/{job.slug})
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+
         {/* Tabs */}
         <div style={{
           display: 'flex',
@@ -102,7 +131,8 @@ export const ShareEmbedModal = ({ isOpen, onClose }) => {
           {[
             { id: 'direct', label: 'Tautan Langsung' },
             { id: 'iframe', label: 'Kode Iframe Inline' },
-            { id: 'popup', label: 'Widget Tombol Popup' }
+            { id: 'popup', label: 'Widget Tombol Popup' },
+            { id: 'apply', label: 'Form Lamaran' }
           ].map((tab) => (
             <button
               key={tab.id}
@@ -222,6 +252,73 @@ export const ShareEmbedModal = ({ isOpen, onClose }) => {
               {copiedType === 'popup' ? <Check size={14} /> : <Copy size={14} />}
               <span>{copiedType === 'popup' ? 'Kode Disalin' : 'Salin Kode Widget'}</span>
             </button>
+          </div>
+        )}
+
+        {activeTab === 'apply' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+            <div style={{
+              padding: '0.75rem 1rem',
+              backgroundColor: 'var(--brand-50)',
+              border: '1px solid var(--brand-200)',
+              borderRadius: 'var(--radius-md)',
+              fontSize: '0.8rem',
+              color: 'var(--brand-700)',
+              lineHeight: 1.5
+            }}>
+              Mini page khusus kandidat: mereka mengisi data (nama, email, WhatsApp, TikTok, IG) dan mengunggah CV langsung dari tautan ini. Seluruh data otomatis tersimpan di database dan muncul di tab <strong>CV Review</strong>.
+            </div>
+
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.5rem',
+              backgroundColor: 'var(--bg-secondary)',
+              padding: '0.65rem 0.85rem',
+              borderRadius: 'var(--radius-md)',
+              border: '1px solid var(--border-default)'
+            }}>
+              <Smartphone size={16} style={{ color: 'var(--brand-600)', flexShrink: 0 }} />
+              <span style={{
+                flex: 1,
+                fontSize: '0.85rem',
+                fontFamily: 'var(--font-mono)',
+                color: 'var(--text-primary)',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap'
+              }}>
+                {applyUrl}
+              </span>
+              <button
+                onClick={() => handleCopy(applyUrl, 'apply')}
+                className="btn btn-primary btn-sm"
+              >
+                {copiedType === 'apply' ? <Check size={14} /> : <Copy size={14} />}
+                <span>{copiedType === 'apply' ? 'Tersalin' : 'Salin Link'}</span>
+              </button>
+            </div>
+
+            <div style={{ display: 'flex', gap: '0.75rem' }}>
+              <button
+                onClick={shareApplyWhatsApp}
+                className="btn btn-secondary"
+                style={{ flex: 1, color: '#059669', borderColor: '#a7f3d0', backgroundColor: '#f0fdf4' }}
+              >
+                <MessageCircle size={16} />
+                <span>Bagikan via WhatsApp</span>
+              </button>
+              <a
+                href={applyUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="btn btn-secondary"
+                style={{ flex: 1, justifyContent: 'center', textDecoration: 'none' }}
+              >
+                <ExternalLink size={16} />
+                <span>Pratinjau Halaman</span>
+              </a>
+            </div>
           </div>
         )}
 
