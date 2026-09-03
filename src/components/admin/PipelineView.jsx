@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+﻿import React, { useState } from 'react';
 import { useBooking } from '../../context/BookingContext';
 import { 
   Users, 
@@ -24,7 +24,7 @@ const STAGES = [
 ];
 
 export const PipelineView = () => {
-  const { applicants, moveApplicantStatus, inviteToInterview, rejectApplication } = useBooking();
+  const { applicants, moveApplicantStatus } = useBooking();
   const [draggedId, setDraggedId] = useState(null);
   const [dragOverStage, setDragOverStage] = useState(null);
   const [jobFilter, setJobFilter] = useState('all');
@@ -39,16 +39,7 @@ export const PipelineView = () => {
     const idx = STAGES.findIndex((s) => s.id === currentStage);
     const next = idx + direction;
     if (next >= 0 && next < STAGES.length) {
-      const target = STAGES[next].id;
-      if (target === 'invited') {
-        moveApplicantStatus(id, 'invited');
-        inviteToInterview(id);
-      } else if (target === 'rejected') {
-        moveApplicantStatus(id, 'rejected');
-        rejectApplication(id);
-      } else {
-        moveApplicantStatus(id, target);
-      }
+      moveApplicantStatus(id, STAGES[next].id);
     }
   };
 
@@ -60,13 +51,7 @@ export const PipelineView = () => {
   const handleDrop = (e, stageId) => {
     e.preventDefault();
     const id = e.dataTransfer.getData('text/plain') || draggedId;
-    if (id) {
-      const current = applicants.find((a) => a.id === id)?.status;
-      const target = stageId;
-      if (target === 'invited') { moveApplicantStatus(id, 'invited'); inviteToInterview(id); }
-      else if (target === 'rejected') { moveApplicantStatus(id, 'rejected'); rejectApplication(id); }
-      else moveApplicantStatus(id, target);
-    }
+    if (id) moveApplicantStatus(id, stageId);
     setDraggedId(null);
     setDragOverStage(null);
   };
@@ -81,7 +66,7 @@ export const PipelineView = () => {
             HR Recruitment Pipeline
           </h1>
           <p style={{ fontSize: '0.875rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>
-            Pantau alur kandidat: lamaran masuk → analisis CV → diundang → booking interview → diwawancara → ditolak.
+            Pantau alur kandidat: lamaran masuk â†’ analisis CV â†’ diundang â†’ booking interview â†’ diwawancara â†’ ditolak.
           </p>
         </div>
         <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
