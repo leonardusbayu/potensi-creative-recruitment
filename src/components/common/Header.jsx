@@ -47,7 +47,7 @@ export const Header = ({ onOpenShareModal }) => {
             width: '38px',
             height: '38px',
             borderRadius: '10px',
-            background: 'linear-gradient(135deg, #4F46E5 0%, #7C3AED 100%)',
+            background: 'linear-gradient(135deg, #a8201a 0%, #8a1a15 100%)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',

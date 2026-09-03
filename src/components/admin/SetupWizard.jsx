@@ -42,7 +42,7 @@ export const SetupWizard = () => {
   return (
     <div style={{ marginBottom: 16, padding: 16, background: "var(--bg-surface)", border: "1px solid var(--border-default)", borderRadius: 12 }}>
       <div style={{ display: "flex", gap: 8, alignItems: "center", fontWeight: 700 }}>
-        <ShieldCheck size={16} color="#4F46E5" /> Persiapan Sistem ({steps.filter((s) => s.done).length}/{steps.length} selesai)
+        <ShieldCheck size={16} color="#a8201a" /> Persiapan Sistem ({steps.filter((s) => s.done).length}/{steps.length} selesai)
       </div>
       <div style={{ display: "grid", gap: 8, marginTop: 12 }}>
         {steps.map((s, i) => (
@@ -53,7 +53,7 @@ export const SetupWizard = () => {
               <div style={{ fontSize: 11, color: "var(--text-secondary)" }}>{s.desc}</div>
             </div>
             {!s.done && (
-              <button onClick={() => { setActiveAdminTab(s.tab); setActivePotensiSub(s.sub); showToast("Tab pengaturan dibuka → selesaikan langkah ini"); }} style={{ padding: "6px 10px", borderRadius: 8, background: "#4F46E5", color: "#fff", fontSize: 12, display: "flex", gap: 4, alignItems: "center" }}>Lanjut <ArrowRight size={12} /></button>
+              <button onClick={() => { setActiveAdminTab(s.tab); setActivePotensiSub(s.sub); showToast("Tab pengaturan dibuka → selesaikan langkah ini"); }} style={{ padding: "6px 10px", borderRadius: 8, background: "#a8201a", color: "#fff", fontSize: 12, display: "flex", gap: 4, alignItems: "center" }}>Lanjut <ArrowRight size={12} /></button>
             )}
           </div>
         ))}

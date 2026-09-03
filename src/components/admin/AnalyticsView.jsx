@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { BarChart3, Users, Megaphone } from "lucide-react";
 
-const STAGE_COLORS = { pending: "#6b7280", analyzed: "#6366f1", invited: "#10b981", booked: "#0d9488", interviewed: "#059669", hired: "#7c3aed", rejected: "#ef4444" };
+const STAGE_COLORS = { pending: "#6b7280", analyzed: "#b8352e", invited: "#10b981", booked: "#0d9488", interviewed: "#059669", hired: "#a8201a", rejected: "#ef4444" };
 
 export const AnalyticsView = () => {
   const [data, setData] = useState(null);
@@ -31,7 +31,7 @@ export const AnalyticsView = () => {
         </div>
         <div style={{ background: "var(--bg-surface)", border: "1px solid var(--border-default)", borderRadius: 12, padding: 16 }}>
           <div style={{ fontSize: 12, color: "var(--text-secondary)" }}>Diterima (Hired)</div>
-          <div style={{ fontSize: 24, fontWeight: 800, color: "#7c3aed" }}>{data.applicants.hired || 0}</div>
+          <div style={{ fontSize: 24, fontWeight: 800, color: "#a8201a" }}>{data.applicants.hired || 0}</div>
         </div>
         <div style={{ background: "var(--bg-surface)", border: "1px solid var(--border-default)", borderRadius: 12, padding: 16 }}>
           <div style={{ fontSize: 12, color: "var(--text-secondary)", display: "flex", gap: 6, alignItems: "center" }}><Megaphone size={14} /> Post Terbit</div>

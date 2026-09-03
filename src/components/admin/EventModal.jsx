@@ -12,12 +12,12 @@ import {
 } from 'lucide-react';
 
 const colorOptions = [
-  '#4F46E5', // Indigo
+  '#a8201a', // Indigo
   '#0D9488', // Teal
   '#059669', // Emerald
   '#D97706', // Amber
   '#DC2626', // Red
-  '#7C3AED', // Purple
+  '#a8201a', // Brand red
   '#0284C7', // Blue
   '#E11D48'  // Rose
 ];
@@ -28,7 +28,7 @@ export const EventModal = ({ isOpen, onClose, onSave, eventToEdit }) => {
     slug: '',
     description: '',
     duration: 30,
-    color: '#4F46E5',
+    color: '#a8201a',
     locationType: 'google_meet',
     locationDetails: 'Google Meet',
     bufferBefore: 5,
@@ -44,7 +44,7 @@ export const EventModal = ({ isOpen, onClose, onSave, eventToEdit }) => {
         slug: eventToEdit.slug || '',
         description: eventToEdit.description || '',
         duration: Number(eventToEdit.duration) || 30,
-        color: eventToEdit.color || '#4F46E5',
+        color: eventToEdit.color || '#a8201a',
         locationType: eventToEdit.locationType || 'google_meet',
         locationDetails: eventToEdit.locationDetails || 'Google Meet',
         bufferBefore: Number(eventToEdit.bufferBefore) || 0,
@@ -58,7 +58,7 @@ export const EventModal = ({ isOpen, onClose, onSave, eventToEdit }) => {
         slug: '',
         description: '',
         duration: 30,
-        color: '#4F46E5',
+        color: '#a8201a',
         locationType: 'google_meet',
         locationDetails: 'Google Meet (Tautan otomatis)',
         bufferBefore: 5,

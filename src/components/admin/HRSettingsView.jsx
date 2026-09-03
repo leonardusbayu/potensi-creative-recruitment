@@ -62,12 +62,12 @@ export const HRSettingsView = () => {
         <h3 style={{ fontWeight: 700, display: "flex", gap: 8, alignItems: "center" }}><Mail size={16} /> Template Email</h3>
         <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
           {["invite", "reject", "offer", "psychotest"].map((t) => (
-            <button key={t} onClick={() => { const found = templates.find((x) => x.type === t); setTpl({ type: t, subject: found?.subject || "", body: found?.body || "" }); }} style={{ padding: "8px 12px", borderRadius: 8, border: tpl.type === t ? "2px solid #4F46E5" : "1px solid var(--border-default)", background: tpl.type === t ? "#fff" : "var(--bg-secondary)", fontWeight: 600 }}>{t}</button>
+            <button key={t} onClick={() => { const found = templates.find((x) => x.type === t); setTpl({ type: t, subject: found?.subject || "", body: found?.body || "" }); }} style={{ padding: "8px 12px", borderRadius: 8, border: tpl.type === t ? "2px solid #a8201a" : "1px solid var(--border-default)", background: tpl.type === t ? "#fff" : "var(--bg-secondary)", fontWeight: 600 }}>{t}</button>
           ))}
         </div>
         <input value={tpl.subject} onChange={(e) => setTpl({ ...tpl, subject: e.target.value })} placeholder="Subject" style={{ width: "100%", marginTop: 12, padding: "10px 12px", borderRadius: 8, border: "1px solid var(--border-default)" }} />
         <textarea value={tpl.body} onChange={(e) => setTpl({ ...tpl, body: e.target.value })} rows={5} placeholder="Body HTML (gunakan {name} untuk nama kandidat)" style={{ width: "100%", marginTop: 12, padding: "10px 12px", borderRadius: 8, border: "1px solid var(--border-default)" }} />
-        <button onClick={handleSaveTpl} style={{ marginTop: 12, background: "#4F46E5", color: "#fff", padding: "10px 16px", borderRadius: 8, fontWeight: 600 }}>Simpan Template</button>
+        <button onClick={handleSaveTpl} style={{ marginTop: 12, background: "#a8201a", color: "#fff", padding: "10px 16px", borderRadius: 8, fontWeight: 600 }}>Simpan Template</button>
       </div>
 
       <div style={{ marginTop: 20, background: "var(--bg-surface)", border: "1px solid var(--border-default)", borderRadius: 12, padding: 20 }}>

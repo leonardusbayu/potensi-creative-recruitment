@@ -67,7 +67,7 @@ export const OpenRouterSettingsView = () => {
         <h3 style={{ fontWeight: 700, display: "flex", gap: 8, alignItems: "center" }}><Key size={16} /> API Key</h3>
         <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
           <input type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder="OPENROUTER_API_KEY (disimpan di D1)" style={{ flex: 1, minWidth: 240, padding: "10px 12px", borderRadius: 8, border: "1px solid var(--border-default)" }} />
-          <button onClick={saveKey} style={{ padding: "10px 16px", borderRadius: 8, background: "#4F46E5", color: "#fff", fontWeight: 600, display: "flex", gap: 6, alignItems: "center" }}><Save size={14} /> Simpan Key</button>
+          <button onClick={saveKey} style={{ padding: "10px 16px", borderRadius: 8, background: "#a8201a", color: "#fff", fontWeight: 600, display: "flex", gap: 6, alignItems: "center" }}><Save size={14} /> Simpan Key</button>
         </div>
         <p style={{ fontSize: 12, color: "var(--text-secondary)", marginTop: 8 }}>Atau set via env: <code>npx wrangler secret put OPENROUTER_API_KEY</code></p>
       </div>

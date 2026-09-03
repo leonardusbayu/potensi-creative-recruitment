@@ -23,7 +23,7 @@ export const ToastLogPanel = () => {
               {toastHistory.map((t) => (
                 <div key={t.id} style={{ padding: "8px 10px", border: "1px solid var(--border-default)", borderRadius: 8, fontSize: 12 }}>
                   <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                    <span style={{ width: 8, height: 8, borderRadius: "50%", background: t.type === "error" ? "#ef4444" : t.type === "warning" ? "#f59e0b" : t.type === "info" ? "#6366f1" : "#10b981" }} />
+                    <span style={{ width: 8, height: 8, borderRadius: "50%", background: t.type === "error" ? "#ef4444" : t.type === "warning" ? "#f59e0b" : t.type === "info" ? "#b8352e" : "#10b981" }} />
                     <span style={{ fontWeight: 600 }}>{t.message}</span>
                   </div>
                   <div style={{ color: "var(--text-secondary)", marginTop: 2 }}>{new Date(t.at).toLocaleString("id-ID")}</div>

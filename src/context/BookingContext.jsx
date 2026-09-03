@@ -94,7 +94,14 @@ export const BookingProvider = ({ children }) => {
 
   // 6. Navigation & View State
   const [currentView, setCurrentView] = useState('admin'); // 'admin' | 'public_booking'
-  const [activeAdminTab, setActiveAdminTab] = useState('potensi');
+  const [activeAdminTab, setActiveAdminTab] = useState(() => {
+    const saved = localStorage.getItem('calendarjet_admin_tab');
+    try {
+      return saved ? JSON.parse(saved) : 'potensi';
+    } catch {
+      return saved || 'potensi';
+    }
+  });
   const [activePotensiSub, setActivePotensiSub] = useState('overview');
   const [selectedPublicEventId, setSelectedPublicEventId] = useState('evt-1');
   const [theme, setTheme] = useState(() => {
@@ -156,6 +163,10 @@ export const BookingProvider = ({ children }) => {
   useEffect(() => {
     localStorage.setItem('calendarjet_social_accounts', JSON.stringify(socialAccounts));
   }, [socialAccounts]);
+
+  useEffect(() => {
+    localStorage.setItem('calendarjet_admin_tab', JSON.stringify(activeAdminTab));
+  }, [activeAdminTab]);
 
   useEffect(() => {
     const token = localStorage.getItem("calendarjet_admin_token") || "";
@@ -281,7 +292,7 @@ export const BookingProvider = ({ children }) => {
       eventId: event.id,
       eventTitle: event.title,
       duration: duration,
-      color: event.color || '#4F46E5',
+      color: event.color || '#a8201a',
       date: bookingData.date,
       time: bookingData.time,
       endTime: endTime,

@@ -56,7 +56,7 @@ export const ApplyForm = ({ jobSlug }) => {
           <Upload size={16} /><span style={{ fontSize: 14 }}>{form.cv ? `${form.cv.name} (${Math.round(form.cv.size / 1024)} KB)` : "Upload CV (PDF/DOCX, max 10MB)"}</span>
           <input type="file" aria-label="Upload CV" accept=".pdf,.docx,.doc" onChange={(e) => setForm({ ...form, cv: e.target.files?.[0] ?? null })} style={{ display: "none" }} />
         </label>
-        <button type="submit" disabled={loading} aria-label="Kirim lamaran" style={{ background: "#4F46E5", color: "#fff", padding: "12px 16px", borderRadius: 8, fontWeight: 700, display: "flex", gap: 8, alignItems: "center", justifyContent: "center" }}>
+        <button type="submit" disabled={loading} aria-label="Kirim lamaran" style={{ background: "#a8201a", color: "#fff", padding: "12px 16px", borderRadius: 8, fontWeight: 700, display: "flex", gap: 8, alignItems: "center", justifyContent: "center" }}>
           <Send size={16} />{loading ? "Mengirimâ€¦" : "Kirim Lamaran"}
         </button>
       </form>

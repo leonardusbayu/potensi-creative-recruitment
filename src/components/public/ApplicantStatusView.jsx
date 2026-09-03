@@ -96,7 +96,7 @@ export const ApplicantStatusView = ({ token }) => {
           <div style={{ fontWeight: 600 }}>Jadwal Interview Anda</div>
           <div style={{ fontSize: 13, color: "var(--text-secondary)", marginTop: 4 }}>{booking.date} Â· {booking.time} WIB</div>
           <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
-            <button onClick={() => setReschedule(!reschedule)} aria-expanded={reschedule} style={{ padding: "8px 12px", borderRadius: 8, background: "#4F46E5", color: "#fff", display: "flex", gap: 6, alignItems: "center" }}><RefreshCw size={14} /> Ubah Jadwal</button>
+            <button onClick={() => setReschedule(!reschedule)} aria-expanded={reschedule} style={{ padding: "8px 12px", borderRadius: 8, background: "#a8201a", color: "#fff", display: "flex", gap: 6, alignItems: "center" }}><RefreshCw size={14} /> Ubah Jadwal</button>
             <button onClick={doCancel} aria-label="Batalkan jadwal interview" style={{ padding: "8px 12px", borderRadius: 8, border: "1px solid var(--border-default)", color: "#ef4444", display: "flex", gap: 6, alignItems: "center" }}><Trash2 size={14} /> Batalkan</button>
           </div>
           {reschedule && (

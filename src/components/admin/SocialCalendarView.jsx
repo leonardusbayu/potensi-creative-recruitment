@@ -34,7 +34,7 @@ export const SocialCalendarView = () => {
   const statusBadge = (s) => {
     const cfg = {
       scheduled: { c: "#f59e0b", label: "Terjadwal" },
-      queued_postiz: { c: "#6366f1", label: "Postiz" },
+      queued_postiz: { c: "#b8352e", label: "Postiz" },
       published: { c: "#10b981", label: "Terbit" },
       cancelled: { c: "#6b7280", label: "Batal" },
       failed: { c: "#ef4444", label: "Gagal" },

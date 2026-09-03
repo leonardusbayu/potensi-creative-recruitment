@@ -5,7 +5,7 @@ export const initialEventTypes = [
     slug: 'konsultasi-strategis-30min',
     description: 'Sesi diskusi mendalam 1-on-1 untuk membahas strategi bisnis, arsitektur teknis, dan solusi digital yang tepat.',
     duration: 30, // in minutes
-    color: '#4F46E5', // Indigo
+    color: '#a8201a', // Brick red
     icon: 'video',
     locationType: 'google_meet', // google_meet, zoom, phone, in_person
     locationDetails: 'Google Meet (Tautan otomatis dibuat setelah booking)',
@@ -61,7 +61,7 @@ export const initialEventTypes = [
     slug: 'system-architecture-audit-60min',
     description: 'Analisis komprehensif struktur codebase, pipeline deployment, database schema, dan optimasi performa sistem.',
     duration: 60,
-    color: '#7C3AED', // Purple
+    color: '#8a1a15', // Deep brand red
     icon: 'code',
     locationType: 'google_meet',
     locationDetails: 'Google Meet dengan Screen Sharing',
@@ -80,7 +80,7 @@ export const initialEventTypes = [
     slug: 'potensi-creative-interview-30min',
     description: 'Sesi interview 30 menit untuk calon live streamer Potensi Creative (HR + kandidat). Link Meet otomatis, verifikasi via CV AI.',
     duration: 30,
-    color: '#EC4899',
+    color: '#b8352e',
     icon: 'video',
     locationType: 'google_meet',
     locationDetails: 'Google Meet — link otomatis setelah booking terverifikasi',
@@ -133,7 +133,7 @@ export const initialBookings = [
     eventId: 'evt-1',
     eventTitle: 'Konsultasi Strategis 1-on-1',
     duration: 30,
-    color: '#4F46E5',
+    color: '#a8201a',
     date: getRelativeDate(1), // Tomorrow
     time: '10:00',
     endTime: '10:30',
@@ -204,7 +204,7 @@ export const initialBookings = [
     eventId: 'evt-4',
     eventTitle: 'Audit & Review Arsitektur Sistem',
     duration: 60,
-    color: '#7C3AED',
+    color: '#8a1a15',
     date: getRelativeDate(-3), // 3 days ago
     time: '15:00',
     endTime: '16:00',
@@ -228,7 +228,7 @@ export const initialBookings = [
     eventId: 'evt-1',
     eventTitle: 'Konsultasi Strategis 1-on-1',
     duration: 30,
-    color: '#4F46E5',
+    color: '#a8201a',
     date: getRelativeDate(-5),
     time: '09:30',
     endTime: '10:00',
@@ -256,7 +256,7 @@ export const initialBrandSettings = {
   hostAvatar: 'https://images.unsplash.com/photo-1524504388940-b1c1722653e1?auto=format&fit=crop&q=80&w=400',
   companyName: 'Potensi Creative Recruitment',
   companyLogo: '',
-  brandColor: '#4F46E5',
+  brandColor: '#a8201a',
   customSlug: 'potensi-creative',
   domainCustom: 'rekrut.potensi-creative.id',
   email: 'hr@potensi-creative.id',

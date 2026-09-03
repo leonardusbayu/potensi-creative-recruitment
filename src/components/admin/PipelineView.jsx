@@ -14,11 +14,11 @@ import {
 
 const STAGES = [
   { id: 'pending', label: '1. Lamaran Masuk', color: '#6b7280', bg: '#f3f4f6' },
-  { id: 'analyzed', label: '2. CV Dianalisis', color: '#6366f1', bg: '#eef2ff' },
+  { id: 'analyzed', label: '2. CV Dianalisis', color: '#b8352e', bg: '#eef2ff' },
   { id: 'invited', label: '3. Diundang Interview', color: '#0D9488', bg: '#f0fdfa' },
   { id: 'booked', label: '4. Jadwal Terkunci', color: '#D97706', bg: '#fffbeb' },
   { id: 'interviewed', label: '5. Sudah Diwawancara', color: '#059669', bg: '#ecfdf5' },
-  { id: 'tested', label: '6. Psikotes Selesai', color: '#7c3aed', bg: '#f5f3ff' },
+  { id: 'tested', label: '6. Psikotes Selesai', color: '#a8201a', bg: '#f5f3ff' },
   { id: 'hired', label: '7. Diterima', color: '#10b981', bg: '#ecfdf5' },
   { id: 'rejected', label: '8. Ditolak', color: '#ef4444', bg: '#fef2f2' }
 ];

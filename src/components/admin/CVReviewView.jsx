@@ -34,7 +34,7 @@ export const CVReviewView = () => {
   const paged = list.slice((pageSafe - 1) * PER_PAGE, pageSafe * PER_PAGE);
 
   const badge = (s, score) => {
-    const map = { pending: "#6b7280", analyzed: "#6366f1", invited: "#10b981", rejected: "#ef4444", booked: "#0d9488", interviewed: "#059669", test_sent: "#f59e0b", tested: "#d97706", hired: "#7c3aed" };
+    const map = { pending: "#6b7280", analyzed: "#b8352e", invited: "#10b981", rejected: "#ef4444", booked: "#0d9488", interviewed: "#059669", test_sent: "#f59e0b", tested: "#d97706", hired: "#a8201a" };
     const c = map[s] || "#6b7280";
     return <span style={{ background: c, color: "#fff", padding: "2px 8px", borderRadius: 999, fontSize: 12 }}>{s}{score != null ? ` Â· ${score}` : ""}</span>;
   };
@@ -119,10 +119,10 @@ export const CVReviewView = () => {
         </select>
         {selected.length > 0 && (
           <span style={{ display: "flex", gap: 6 }}>
-            <button onClick={bulkInvite} style={{ padding: "6px 10px", borderRadius: 8, background: "#4F46E5", color: "#fff", fontSize: 12 }}>Undang {selected.length}</button>
+            <button onClick={bulkInvite} style={{ padding: "6px 10px", borderRadius: 8, background: "#a8201a", color: "#fff", fontSize: 12 }}>Undang {selected.length}</button>
             <button onClick={bulkReject} style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid var(--border-default)", color: "#ef4444", fontSize: 12 }}>Tolak {selected.length}</button>
             {selected.every((id) => (applicants.find((a) => a.id === id)?.status === "interviewed")) && <button onClick={bulkPsychotest} style={{ padding: "6px 10px", borderRadius: 8, background: "#f59e0b", color: "#fff", fontSize: 12 }}>Psikotes {selected.length}</button>}
-            {selected.every((id) => (applicants.find((a) => a.id === id)?.status === "tested")) && <button onClick={bulkHire} style={{ padding: "6px 10px", borderRadius: 8, background: "#7c3aed", color: "#fff", fontSize: 12 }}>Terima {selected.length}</button>}
+            {selected.every((id) => (applicants.find((a) => a.id === id)?.status === "tested")) && <button onClick={bulkHire} style={{ padding: "6px 10px", borderRadius: 8, background: "#a8201a", color: "#fff", fontSize: 12 }}>Terima {selected.length}</button>}
           </span>
         )}
         <button onClick={exportCsv} style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid var(--border-default)", fontSize: 12, marginLeft: "auto" }}>Export CSV</button>
@@ -150,7 +150,7 @@ export const CVReviewView = () => {
                     <div style={{ fontWeight: 600 }}>{a.name}</div>
                     <div style={{ fontSize: 12, color: "var(--text-secondary)" }}>{a.email} Â· {a.wa}</div>
                     <div style={{ fontSize: 12 }}>{a.ai_summary?.slice(0, 80)}</div>
-                    {a.notes && <div style={{ fontSize: 11, color: "#7c3aed", marginTop: 2 }}>ðŸ“ {a.notes.slice(0, 60)}</div>}
+                    {a.notes && <div style={{ fontSize: 11, color: "#a8201a", marginTop: 2 }}>ðŸ“ {a.notes.slice(0, 60)}</div>}
                   </td>
                   <td style={{ padding: "10px 12px", fontSize: 12 }}>{a.tiktok ? `TT:${a.tiktok}` : ""} {a.ig ? `IG:${a.ig}` : ""}</td>
                   <td style={{ padding: "10px 12px", fontWeight: 700 }}>{a.score ?? "-"}</td>
@@ -158,12 +158,12 @@ export const CVReviewView = () => {
                   <td style={{ padding: "10px 12px", display: "flex", gap: 6, flexWrap: "wrap" }}>
                     <button onClick={() => openCV(a.id)} title="Lihat CV" style={{ padding: "6px 8px", borderRadius: 8, border: "1px solid var(--border-default)", background: "#fff" }}><FileText size={14} /></button>
                     <button onClick={() => sendWA(a.id)} title="WhatsApp" style={{ padding: "6px 8px", borderRadius: 8, border: "1px solid var(--border-default)", background: "#fff", color: "#059669" }}><MessageCircle size={14} /></button>
-                    <button onClick={() => openNotes(a)} title="Catatan" style={{ padding: "6px 8px", borderRadius: 8, border: "1px solid var(--border-default)", background: "#fff", color: "#7c3aed" }}><StickyNote size={14} /></button>
+                    <button onClick={() => openNotes(a)} title="Catatan" style={{ padding: "6px 8px", borderRadius: 8, border: "1px solid var(--border-default)", background: "#fff", color: "#a8201a" }}><StickyNote size={14} /></button>
                     {a.status === "pending" ? (
                       <button onClick={() => analyzeApplicant(a.id)} style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid var(--border-default)", background: "#fff", display: "flex", gap: 6, alignItems: "center" }}><Eye size={14} /> Analisis</button>
                     ) : a.status === "analyzed" ? (
                       <span style={{ display: "flex", gap: 6 }}>
-                        <button onClick={() => { inviteToInterview(a.id); }} style={{ padding: "6px 10px", borderRadius: 8, background: "#4F46E5", color: "#fff", display: "flex", gap: 6, alignItems: "center" }}><Mail size={14} /> Undang</button>
+                        <button onClick={() => { inviteToInterview(a.id); }} style={{ padding: "6px 10px", borderRadius: 8, background: "#a8201a", color: "#fff", display: "flex", gap: 6, alignItems: "center" }}><Mail size={14} /> Undang</button>
                         <button onClick={() => { rejectApplication(a.id); }} style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid var(--border-default)", background: "#fff", color: "#ef4444", display: "flex", gap: 6, alignItems: "center" }}><XCircle size={14} /> Tolak</button>
                       </span>
                     ) : a.status === "invited" ? (
@@ -179,12 +179,12 @@ export const CVReviewView = () => {
                       </span>
                     ) : a.status === "tested" ? (
                       <span style={{ display: "flex", gap: 6 }}>
-                        <button onClick={() => { hireApplicant(a.id); }} style={{ padding: "6px 10px", borderRadius: 8, background: "#7c3aed", color: "#fff", display: "flex", gap: 6, alignItems: "center" }}><UserCheck size={14} /> Terima</button>
+                        <button onClick={() => { hireApplicant(a.id); }} style={{ padding: "6px 10px", borderRadius: 8, background: "#a8201a", color: "#fff", display: "flex", gap: 6, alignItems: "center" }}><UserCheck size={14} /> Terima</button>
                         <button onClick={() => { rejectApplication(a.id); }} style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid var(--border-default)", color: "#ef4444", display: "flex", gap: 6, alignItems: "center" }}><XCircle size={14} /> Tolak</button>
                         <button onClick={() => { openPsyResult(a); }} title="Ubah hasil" style={{ padding: "6px 8px", borderRadius: 8, border: "1px solid var(--border-default)", background: "#fff", color: "#d97706" }}><ClipboardList size={14} /></button>
                       </span>
                     ) : a.status === "hired" ? (
-                      <span style={{ fontSize: 12, color: "#7c3aed", fontWeight: 600 }}>âœ“ Diterima</span>
+                      <span style={{ fontSize: 12, color: "#a8201a", fontWeight: 600 }}>âœ“ Diterima</span>
                     ) : (
                       <span style={{ fontSize: 12, color: "#ef4444" }}>Ditolak</span>
                     )}
@@ -210,7 +210,7 @@ export const CVReviewView = () => {
             <textarea value={notesText} onChange={(e) => setNotesText(e.target.value)} rows={5} placeholder="Catatan hasil interview / evaluasi..." style={{ width: "100%", padding: "10px 12px", borderRadius: 8, border: "1px solid var(--border-default)" }} />
             <div style={{ display: "flex", gap: 8, marginTop: 12, justifyContent: "flex-end" }}>
               <button onClick={() => setNotesFor(null)} style={{ padding: "8px 12px", borderRadius: 8, border: "1px solid var(--border-default)" }}>Batal</button>
-              <button onClick={saveNotes} style={{ padding: "8px 12px", borderRadius: 8, background: "#4F46E5", color: "#fff" }}>Simpan</button>
+              <button onClick={saveNotes} style={{ padding: "8px 12px", borderRadius: 8, background: "#a8201a", color: "#fff" }}>Simpan</button>
             </div>
           </div>
         </div>

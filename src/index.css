@@ -16,20 +16,20 @@
   --border-subtle: #f1f5f9;
   --border-default: #e2e8f0;
   --border-strong: #cbd5e1;
-  --border-focus: #6366f1;
+  --border-focus: #a8201a;
 
   --text-primary: #0f172a;
   --text-secondary: #475569;
   --text-muted: #64748b;
   --text-inverse: #ffffff;
 
-  /* Brand Accents (CalendarJet Indigo / Violet) */
-  --brand-50: #eef2ff;
-  --brand-100: #e0e7ff;
-  --brand-200: #c7d2fe;
-  --brand-500: #6366f1;
-  --brand-600: #4f46e5;
-  --brand-700: #4338ca;
+  /* Brand Accents (Potensi Creative — brick red / charcoal) */
+  --brand-50: #fdf3f2;
+  --brand-100: #fbe4e2;
+  --brand-200: #f5c9c6;
+  --brand-500: #b8352e;
+  --brand-600: #a8201a;
+  --brand-700: #8a1a15;
 
   /* Status Colors */
   --success-bg: #ecfdf5;
@@ -87,12 +87,12 @@
   --text-muted: #94a3b8;
   --text-inverse: #0f172a;
 
-  --brand-50: #1e1b4b;
-  --brand-100: #312e81;
-  --brand-200: #3730a3;
-  --brand-500: #6366f1;
-  --brand-600: #4f46e5;
-  --brand-700: #6366f1;
+  --brand-50: #3a1512;
+  --brand-100: #4a1c18;
+  --brand-200: #6b2822;
+  --brand-500: #d0453d;
+  --brand-600: #e05048;
+  --brand-700: #e86e67;
 
   --shadow-card: 0 0 0 1px rgba(255, 255, 255, 0.08), 0 4px 20px rgba(0, 0, 0, 0.4);
 }

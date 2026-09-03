@@ -28,7 +28,7 @@ export const ShareEmbedModal = ({ isOpen, onClose }) => {
 
   const iframeSnippet = `<iframe\n  src="${targetUrl}"\n  width="100%"\n  height="720"\n  frameborder="0"\n  style="border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.08);"\n></iframe>`;
 
-  const popupSnippet = `<!-- CalendarJet Floating Booking Widget -->\n<script src="https://assets.calendarjet.me/widget.js" async></script>\n<button\n  onclick="CalendarJet.open('${targetUrl}')"\n  style="background: #4F46E5; color: #fff; padding: 12px 24px; border-radius: 99px; font-weight: bold; border: none; cursor: pointer;"\n>\n  📅 Jadwalkan Pertemuan\n</button>`;
+  const popupSnippet = `<!-- CalendarJet Floating Booking Widget -->\n<script src="https://assets.calendarjet.me/widget.js" async></script>\n<button\n  onclick="CalendarJet.open('${targetUrl}')"\n  style="background: #a8201a; color: #fff; padding: 12px 24px; border-radius: 99px; font-weight: bold; border: none; cursor: pointer;"\n>\n  📅 Jadwalkan Pertemuan\n</button>`;
 
   const handleCopy = async (text, type) => {
     try {

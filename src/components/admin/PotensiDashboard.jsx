@@ -41,7 +41,7 @@ export const PotensiDashboard = () => {
         </div>
       )}
       <SetupWizard />
-      <div style={{ background: "linear-gradient(135deg, #4F46E5 0%, #EC4899 100%)", borderRadius: 16, padding: "20px 24px", color: "#fff", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
+      <div style={{ background: "linear-gradient(135deg, #a8201a 0%, #8a1a15 100%)", borderRadius: 16, padding: "20px 24px", color: "#fff", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
         <div>
           <h1 style={{ fontSize: "1.4rem", fontWeight: 800, display: "flex", gap: 8, alignItems: "center" }}><Megaphone size={22} /> Potensi Creative Recruitment</h1>
           <p style={{ opacity: 0.9, fontSize: 13, marginTop: 4 }}>Dashboard terpadu — Posting lowongan → Kalender Post (auto-publish) → Hubungkan Akun Sosmed → Review CV AI → Interview</p>

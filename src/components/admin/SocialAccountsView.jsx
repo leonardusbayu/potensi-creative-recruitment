@@ -38,7 +38,7 @@ export const SocialAccountsView = () => {
     <div style={{ padding: "1.5rem" }}>
       <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 16, flexWrap: "wrap" }}>
         <input value={adminToken} onChange={(e) => setAdminToken(e.target.value)} placeholder="Admin Token (wajib untuk aksi HR ke server)" style={{ flex: 1, minWidth: 220, padding: "8px 12px", borderRadius: 8, border: "1px solid var(--border-default)" }} />
-        <button onClick={saveAdminToken} style={{ padding: "8px 12px", borderRadius: 8, background: "#4F46E5", color: "#fff", fontWeight: 600 }}>Simpan Token</button>
+        <button onClick={saveAdminToken} style={{ padding: "8px 12px", borderRadius: 8, background: "#a8201a", color: "#fff", fontWeight: 600 }}>Simpan Token</button>
       </div>
       <h1 style={{ fontSize: "1.5rem", fontWeight: 800, display: "flex", gap: 8, alignItems: "center" }}><Link2 size={20} /> Hubungkan Akun Sosial Media</h1>
       <p style={{ color: "var(--text-secondary)", fontSize: 13, marginTop: 4 }}>Hubungkan akun untuk auto-posting lowongan rekrutmen. Untuk IG/FB/Threads isi token Meta + page/IG/threads user ID; TikTok isi token + open_id.</p>
@@ -62,7 +62,7 @@ export const SocialAccountsView = () => {
         {platform === "tiktok" && (
           <input value={openId} onChange={(e) => setOpenId(e.target.value)} placeholder="TikTok open_id (dari TikTok Developer)" style={{ padding: "10px 12px", borderRadius: 8, border: "1px solid var(--border-default)" }} />
         )}
-        <button type="submit" style={{ background: "#4F46E5", color: "#fff", padding: "10px 16px", borderRadius: 8, fontWeight: 700, display: "flex", gap: 8, alignItems: "center", justifyContent: "center" }}><Plus size={16} /> Hubungkan Akun</button>
+        <button type="submit" style={{ background: "#a8201a", color: "#fff", padding: "10px 16px", borderRadius: 8, fontWeight: 700, display: "flex", gap: 8, alignItems: "center", justifyContent: "center" }}><Plus size={16} /> Hubungkan Akun</button>
       </form>
 
       <div style={{ marginTop: 20 }}>
@@ -75,7 +75,7 @@ export const SocialAccountsView = () => {
             return (
               <div key={a.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: 14, background: "var(--bg-surface)", border: "1px solid var(--border-default)", borderRadius: 12 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                  <span style={{ width: 38, height: 38, borderRadius: 10, display: "flex", alignItems: "center", justifyContent: "center", background: p?.color || "#4F46E5", color: "#fff" }}><Icon size={18} /></span>
+                  <span style={{ width: 38, height: 38, borderRadius: 10, display: "flex", alignItems: "center", justifyContent: "center", background: p?.color || "#a8201a", color: "#fff" }}><Icon size={18} /></span>
                   <div>
                     <div style={{ fontWeight: 700 }}>{a.displayName}</div>
                     <div style={{ fontSize: 12, color: "var(--text-secondary)" }}>{a.platform} · {a.username}</div>
