@@ -66,7 +66,7 @@ export const PipelineView = () => {
             HR Recruitment Pipeline
           </h1>
           <p style={{ fontSize: '0.875rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>
-            Pantau alur kandidat: lamaran masuk â†’ analisis CV â†’ diundang â†’ booking interview â†’ diwawancara â†’ ditolak.
+            Pantau alur kandidat: lamaran masuk → analisis CV → diundang → booking interview → diwawancara → ditolak.
           </p>
         </div>
         <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>

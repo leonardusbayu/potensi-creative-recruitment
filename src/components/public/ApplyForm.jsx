@@ -60,7 +60,7 @@ export const ApplyForm = ({ jobSlug }) => {
           <Send size={16} />{loading ? "Mengirimâ€¦" : "Kirim Lamaran"}
         </button>
       </form>
-      <p style={{ fontSize: 11, color: "var(--text-secondary)", marginTop: 8 }}>CV akan dianalisa AI (40% liveExp, bonus followers tidak wajib). Lolos â†’ email invite link interview 7 hari.</p>
+      <p style={{ fontSize: 11, color: "var(--text-secondary)", marginTop: 8 }}>CV akan dianalisa AI (40% liveExp, bonus followers tidak wajib). Lolos → email invite link interview 7 hari.</p>
     </div>
   );
 };
