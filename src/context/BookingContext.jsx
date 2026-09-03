@@ -95,6 +95,7 @@ export const BookingProvider = ({ children }) => {
   // 6. Navigation & View State
   const [currentView, setCurrentView] = useState('admin'); // 'admin' | 'public_booking'
   const [activeAdminTab, setActiveAdminTab] = useState('potensi');
+  const [activePotensiSub, setActivePotensiSub] = useState('overview');
   const [selectedPublicEventId, setSelectedPublicEventId] = useState('evt-1');
   const [theme, setTheme] = useState(() => {
     const saved = localStorage.getItem('calendarjet_theme');
@@ -799,6 +800,8 @@ export const BookingProvider = ({ children }) => {
         aiMessages,
         currentView,
         activeAdminTab,
+        activePotensiSub,
+        setActivePotensiSub,
         selectedPublicEventId,
         theme,
         toasts,

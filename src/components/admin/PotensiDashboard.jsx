@@ -12,8 +12,12 @@ import { Megaphone, Calendar, Users, TrendingUp, Link2, Settings, BarChart3, Cpu
 
 export const PotensiDashboard = () => {
   const [healthDown, setHealthDown] = useState(false);
-  const { jobs, applicants, bookings, socialAccounts, refreshAll } = useBooking();
-  const [sub, setSub] = useState("overview");
+  const { jobs, applicants, bookings, socialAccounts, refreshAll, activePotensiSub, setActivePotensiSub } = useBooking();
+  const [sub, setSub] = useState(activePotensiSub);
+
+  useEffect(() => {
+    setSub(activePotensiSub);
+  }, [activePotensiSub]);
 
   useEffect(() => {
     fetch("/api/health").then((r) => r.json()).then((j) => { if (!j.ok) setHealthDown(true); }).catch(() => setHealthDown(true));

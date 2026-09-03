@@ -3,7 +3,7 @@ import { useBooking } from "../../context/BookingContext";
 import { ShieldCheck, Circle, CircleCheck, Link2, Cpu, Brain, ArrowRight } from "lucide-react";
 
 export const SetupWizard = () => {
-  const { socialAccounts, setActiveAdminTab, showToast } = useBooking();
+  const { socialAccounts, setActiveAdminTab, setActivePotensiSub, showToast } = useBooking();
   const [tokenOk, setTokenOk] = useState(false);
   const [modelOk, setModelOk] = useState(false);
   const [psyOk, setPsyOk] = useState(false);
@@ -30,10 +30,10 @@ export const SetupWizard = () => {
   }, [socialAccounts.length]);
 
   const steps = [
-    { id: "token", label: "Token Admin", done: tokenOk, tab: "accounts", desc: "Simpan Admin Token di tab Hubungkan Akun" },
-    { id: "accounts", label: "Akun Sosmed", done: socialAccounts.length > 0, tab: "accounts", desc: "Hubungkan TikTok/IG/FB/Threads" },
-    { id: "model", label: "Model AI", done: modelOk, tab: "hr", desc: "Fetch & pilih model OpenRouter" },
-    { id: "psy", label: "URL Psikotes", done: psyOk, tab: "hr", desc: "URL aplikasi psikotes (sikotes)" },
+    { id: "token", label: "Token Admin", done: tokenOk, tab: "potensi", sub: "accounts", desc: "Simpan Admin Token di tab Hubungkan Akun" },
+    { id: "accounts", label: "Akun Sosmed", done: socialAccounts.length > 0, tab: "potensi", sub: "accounts", desc: "Hubungkan TikTok/IG/FB/Threads" },
+    { id: "model", label: "Model AI", done: modelOk, tab: "potensi", sub: "ai", desc: "Fetch & pilih model OpenRouter" },
+    { id: "psy", label: "URL Psikotes", done: psyOk, tab: "potensi", sub: "hr", desc: "URL aplikasi psikotes (sikotes)" },
   ];
   const allDone = steps.every((s) => s.done);
 
@@ -53,7 +53,7 @@ export const SetupWizard = () => {
               <div style={{ fontSize: 11, color: "var(--text-secondary)" }}>{s.desc}</div>
             </div>
             {!s.done && (
-              <button onClick={() => { setActiveAdminTab(s.tab); showToast("Buka tab pengaturan → selesaikan langkah ini"); }} style={{ padding: "6px 10px", borderRadius: 8, background: "#4F46E5", color: "#fff", fontSize: 12, display: "flex", gap: 4, alignItems: "center" }}>Lanjut <ArrowRight size={12} /></button>
+              <button onClick={() => { setActiveAdminTab(s.tab); setActivePotensiSub(s.sub); showToast("Tab pengaturan dibuka → selesaikan langkah ini"); }} style={{ padding: "6px 10px", borderRadius: 8, background: "#4F46E5", color: "#fff", fontSize: 12, display: "flex", gap: 4, alignItems: "center" }}>Lanjut <ArrowRight size={12} /></button>
             )}
           </div>
         ))}
