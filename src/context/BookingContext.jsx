@@ -1,4 +1,4 @@
-﻿import React, { createContext, useContext, useState, useEffect } from 'react';
+﻿import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { 
   initialEventTypes, 
   initialAvailability, 
@@ -204,6 +204,13 @@ export const BookingProvider = ({ children }) => {
         }
       } catch {}
     })();
+  }, []);
+
+  const refreshAllRef = useRef(refreshAll);
+  refreshAllRef.current = refreshAll;
+  useEffect(() => {
+    const t = setInterval(() => { refreshAllRef.current(); }, 20000);
+    return () => clearInterval(t);
   }, []);
 
   useEffect(() => {
