@@ -206,8 +206,7 @@ export const BookingProvider = ({ children }) => {
     })();
   }, []);
 
-  const refreshAllRef = useRef(refreshAll);
-  refreshAllRef.current = refreshAll;
+  const refreshAllRef = useRef(null);
   useEffect(() => {
     const t = setInterval(() => { refreshAllRef.current(); }, 20000);
     return () => clearInterval(t);
@@ -699,6 +698,9 @@ export const BookingProvider = ({ children }) => {
       return ok;
     } catch { return false; }
   };
+
+  if (refreshAllRef.current === null) refreshAllRef.current = refreshAll;
+  refreshAllRef.current = refreshAll;
 
   const repostNow = async (id) => {
     setSocialPosts((prev) => prev.map((p) => (p.id === id ? { ...p, status: "publishing" } : p)));
