@@ -468,15 +468,13 @@ export const BookingProvider = ({ children }) => {
         showToast(`AI score: ${j.analysis.score.overall} - HR tentukan undang/tolak`, "info");
         return j.analysis;
       }
-    } catch {}
-    const a = applicants.find((x) => x.id === applicantId);
-    if (!a) return;
-    const cvText = a.name + " " + a.tiktok + " " + a.ig;
-    let liveExp = /live|host|mc/i.test(cvText) ? 25 : 10;
-    let bonus = /10k/i.test(a.tiktok + a.ig) ? 15 : /1k/i.test(a.tiktok + a.ig) ? 7 : 0;
-    const overall = Math.min(100, liveExp + 15 + 12 + bonus);
-    setApplicants((prev) => prev.map((x) => x.id === applicantId ? { ...x, status: "analyzed", score: overall, ai_summary: `[ESTIMASI LOKAL - bukan LLM] Skor ${overall} (bonus ${bonus}). Server tidak terjangkau; jalankan Analisis ulang saat online.` } : x));
-    showToast(`Skor lokal ${overall} (bukan LLM) - jalankan Analisis ulang saat online`, "warning");
+      const j = await r.json().catch(() => ({}));
+      showToast(`Analisis gagal: ${j.error || `HTTP ${r.status}`} — coba lagi`, "error");
+      return null;
+    } catch {
+      showToast("Analisis gagal - server tidak terjangkau. Coba lagi saat online.", "error");
+      return null;
+    }
   };
 
   const d1BookingsNormalized = d1Bookings.map((b) => ({
@@ -642,12 +640,14 @@ export const BookingProvider = ({ children }) => {
         const j = await r.json();
         post.id = j.id || post.id;
       } else if (r.status === 401) {
-        showToast("Admin Token salah/tidak terdaftar - post hanya lokal", "error");
+        showToast("Admin Token salah/tidak terdaftar - post hanya lokal, TIDAK akan auto-publish", "error");
       }
-    } catch {}
+    } catch {
+      showToast("Server tidak terjangkau - post HANYA tersimpan lokal di browser ini dan tidak akan auto-publish. Buka kembali saat online.", "error");
+    }
     if (viaPostiz) post.status = "queued_postiz";
     setSocialPosts((prev) => [post, ...prev]);
-    return { ...post, viaPostiz };
+    return { ...post, viaPostiz, synced: viaPostiz };
   };
 
   const cancelPost = (id) => {

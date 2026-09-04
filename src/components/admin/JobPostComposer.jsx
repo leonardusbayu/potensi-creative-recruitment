@@ -1,18 +1,30 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useBooking } from "../../context/BookingContext";
 import { Megaphone, Calendar, Send, Smartphone, Copy, Check, ImagePlus, Trash2 } from "lucide-react";
 
+const DRAFT_KEY = "calendarjet_composer_draft";
+
+function loadDraft() {
+  try { return JSON.parse(localStorage.getItem(DRAFT_KEY) || "null"); } catch { return null; }
+}
+
 export const JobPostComposer = () => {
   const { jobs, createJob, schedulePost, showToast, socialPosts, socialAccounts } = useBooking();
-  const [title, setTitle] = useState("Live Streamer TikTok / IG");
-  const [description, setDescription] = useState("Host live shopping, jam 19:00-23:00 WIB, percaya diri di kamera.");
-  const [caption, setCaption] = useState("🔥 LOWONGAN LIVE STREAMER 🔥\nTikTok & IG | 19:00-23:00 WIB | Daftar via link: /apply?job=live-streamer-tiktok-2026");
-  const [platforms, setPlatforms] = useState(["tiktok", "instagram"]);
-  const [scheduledAt, setScheduledAt] = useState("");
+  const saved = loadDraft();
+  const [title, setTitle] = useState(saved?.title ?? "Live Streamer TikTok / IG");
+  const [description, setDescription] = useState(saved?.description ?? "Host live shopping, jam 19:00-23:00 WIB, percaya diri di kamera.");
+  const [caption, setCaption] = useState(saved?.caption ?? "🔥 LOWONGAN LIVE STREAMER 🔥\nTikTok & IG | 19:00-23:00 WIB | Daftar via link: /apply?job=live-streamer-tiktok-2026");
+  const [platforms, setPlatforms] = useState(saved?.platforms ?? ["tiktok", "instagram"]);
+  const [scheduledAt, setScheduledAt] = useState(saved?.scheduledAt ?? "");
   const [media, setMedia] = useState([]);
-  const [accountIds, setAccountIds] = useState([]);
+  const [accountIds, setAccountIds] = useState(saved?.accountIds ?? []);
   const [copied, setCopied] = useState(false);
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    const draft = { title, description, caption, platforms, scheduledAt, accountIds };
+    try { localStorage.setItem(DRAFT_KEY, JSON.stringify(draft)); } catch {}
+  }, [title, description, caption, platforms, scheduledAt, accountIds]);
 
   const handleFile = (e) => {
     const file = e.target.files?.[0];
@@ -37,9 +49,8 @@ export const JobPostComposer = () => {
     setLoading(true);
     const res = await schedulePost({ caption, platforms, accountIds, media: media.map((m) => m.url), scheduledAt: scheduledAt ? new Date(scheduledAt).toISOString() : new Date(Date.now() + 86400000).toISOString() });
     setLoading(false);
-    if (res.viaPostiz) showToast("Dikirim ke Postiz sidecar", "success");
-    else if (res.status === "scheduled") showToast(`Post dijadwalkan — publish ${new Date(res.scheduledAt).toLocaleString("id-ID")}`, "success");
-    else showToast("Post disimpan", "info");
+    if (res.synced) showToast(`Post terjadwal di server — auto-publish ${new Date(res.scheduledAt).toLocaleString("id-ID")}`, "success");
+    else showToast("Post hanya tersimpan lokal — TIDAK akan auto-publish sampai server terjangkau. Salin caption Anda sebagai cadangan.", "warning");
   };
 
   const applySlug = jobs[0]?.slug;

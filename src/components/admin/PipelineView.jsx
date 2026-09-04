@@ -1,15 +1,18 @@
 ﻿import React, { useState } from 'react';
 import { useBooking } from '../../context/BookingContext';
-import { 
-  Users, 
-  Mail, 
-  Phone, 
-  Star, 
-  Video, 
-  CheckCircle2, 
-  XCircle, 
+import { statusLabelId } from '../../utils/statusLabels';
+import {
+  Users,
+  Mail,
+  Phone,
+  Star,
+  Video,
+  CheckCircle2,
+  XCircle,
   GripVertical,
-  Filter
+  Filter,
+  ChevronLeft,
+  ChevronRight
 } from 'lucide-react';
 
 const STAGES = [
@@ -152,6 +155,27 @@ export const PipelineView = () => {
                           {(a.tiktok || a.ig) && <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}><Video size={11} /><span>{a.tiktok ? `TT:${a.tiktok}` : ''}{a.tiktok && a.ig ? ' ' : ''}{a.ig ? `IG:${a.ig}` : ''}</span></div>}
                         </div>
                         <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>{a.ai_summary?.slice(0, 80)}</div>
+                        <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center', paddingTop: '0.35rem', borderTop: '1px solid var(--border-default)' }}>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); const idx = STAGES.findIndex((s) => s.id === a.status); if (idx > 0) moveApplicantStatus(a.id, STAGES[idx - 1].id); }}
+                            disabled={a.status === 'pending' || a.status === 'test_sent'}
+                            aria-label={`Pindahkan ${a.name} ke tahap sebelumnya`}
+                            title="Tahap sebelumnya"
+                            style={{ padding: '4px 6px', borderRadius: 6, border: '1px solid var(--border-default)', background: 'var(--bg-surface)', cursor: 'pointer', display: 'flex', alignItems: 'center' }}
+                          >
+                            <ChevronLeft size={13} />
+                          </button>
+                          <span style={{ fontSize: '0.68rem', fontWeight: 600, color: 'var(--text-secondary)', flex: 1, textAlign: 'center' }}>{statusLabelId(a.status)}</span>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); const idx = STAGES.findIndex((s) => s.id === a.status); if (idx >= 0 && idx < STAGES.length - 1) moveApplicantStatus(a.id, STAGES[idx + 1].id); }}
+                            disabled={a.status === 'hired' || a.status === 'rejected' || a.status === 'test_sent'}
+                            aria-label={`Pindahkan ${a.name} ke tahap berikutnya`}
+                            title="Tahap berikutnya"
+                            style={{ padding: '4px 6px', borderRadius: 6, border: '1px solid var(--border-default)', background: 'var(--bg-surface)', cursor: 'pointer', display: 'flex', alignItems: 'center' }}
+                          >
+                            <ChevronRight size={13} />
+                          </button>
+                        </div>
                       </div>
                     );
                   })

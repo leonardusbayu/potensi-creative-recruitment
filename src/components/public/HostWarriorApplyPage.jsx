@@ -52,6 +52,38 @@ export const HostWarriorApplyPage = ({ jobSlug }) => {
     setTimeout(() => setToast(""), 5000);
   };
 
+  React.useEffect(() => {
+    let cancelled = false;
+    const syncOffline = async () => {
+      let offline = [];
+      try { offline = JSON.parse(localStorage.getItem("pc_offline_apply") || "[]"); } catch { return; }
+      if (!Array.isArray(offline) || offline.length === 0) return;
+      const remaining = [];
+      for (const item of offline) {
+        try {
+          const r = await fetch("/api/apply/sync", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify(item),
+          });
+          if (r.ok || r.status === 409) continue;
+          if (r.status === 429 || r.status >= 500) { remaining.push(item); continue; }
+        } catch {
+          remaining.push(item);
+        }
+      }
+      if (!cancelled) {
+        try { localStorage.setItem("pc_offline_apply", JSON.stringify(remaining)); } catch {}
+        if (offline.length > remaining.length) {
+          showToast("Koneksi pulih — pendaftaran Anda sebelumnya sudah terkirim ke tim HR.");
+        }
+      }
+    };
+    syncOffline();
+    const iv = setInterval(syncOffline, 60000);
+    return () => { cancelled = true; clearInterval(iv); };
+  }, []);
+
   const set = (key, val) => setForm((prev) => ({ ...prev, [key]: val }));
 
   const toggleNiche = (n) =>
@@ -88,7 +120,17 @@ export const HostWarriorApplyPage = ({ jobSlug }) => {
       const res = await submitApplication(fd);
       if (res?.error?.includes?.("duplicate")) showToast("Email sudah pernah melamar untuk lowongan ini", true);
       else if (res?.rateLimited) showToast("Terlalu banyak permintaan — coba lagi dalam beberapa menit. CV Anda tidak terkirim.", true);
-      else if (res?.offline) showToast("Pendaftaran tersimpan lokal — server sedang tidak terjangkau. Tim HR menerima lamaran Anda saat server pulih.", true);
+      else if (res?.offline) {
+        showToast("Jaringan sedang bermasalah — pendaftaran tersimpan di perangkat ini dan akan otomatis terkirim saat koneksi pulih.", true);
+        try {
+          const offline = JSON.parse(localStorage.getItem("pc_offline_apply") || "[]");
+          offline.push({
+            jobId: job.id, name: form.name.trim(), email: form.email.trim().toLowerCase(),
+            wa: form.wa.trim(), tiktok: form.portofolio.trim(), appliedAt: new Date().toISOString(),
+          });
+          localStorage.setItem("pc_offline_apply", JSON.stringify(offline.slice(-5)));
+        } catch {}
+      }
       else if (res?.error) showToast(`Gagal mengirim: ${res.error}`, true);
       else {
         showToast("🎉 Pendaftaran terkirim! Tim HR akan menghubungi Anda dalam 2-3 hari kerja.");
@@ -418,32 +460,32 @@ export const HostWarriorApplyPage = ({ jobSlug }) => {
             <form id="pc-form" onSubmit={handleSubmit}>
               <div className="pc-form-grid">
                 <div className="pc-form-group">
-                  <label>Nama Lengkap *</label>
-                  <input type="text" required placeholder="Nama sesuai KTP" value={form.name} onChange={(e) => set("name", e.target.value)} />
+                  <label htmlFor="pc-f-nama">Nama Lengkap *</label>
+                  <input id="pc-f-nama" type="text" required aria-label="Nama lengkap" placeholder="Nama sesuai KTP" value={form.name} onChange={(e) => set("name", e.target.value)} />
                 </div>
                 <div className="pc-form-group">
-                  <label>Usia *</label>
-                  <input type="number" required min="17" max="40" placeholder="Contoh: 22" value={form.usia} onChange={(e) => set("usia", e.target.value)} />
+                  <label htmlFor="pc-f-usia">Usia *</label>
+                  <input id="pc-f-usia" type="number" required min="17" max="40" aria-label="Usia" placeholder="Contoh: 22" value={form.usia} onChange={(e) => set("usia", e.target.value)} />
                 </div>
                 <div className="pc-form-group">
-                  <label>Nomor WhatsApp Aktif *</label>
-                  <input type="tel" required placeholder="08xx-xxxx-xxxx" value={form.wa} onChange={(e) => set("wa", e.target.value)} />
+                  <label htmlFor="pc-f-wa">Nomor WhatsApp Aktif *</label>
+                  <input id="pc-f-wa" type="tel" required aria-label="Nomor WhatsApp aktif" placeholder="08xx-xxxx-xxxx" value={form.wa} onChange={(e) => set("wa", e.target.value)} />
                 </div>
                 <div className="pc-form-group">
-                  <label>Email *</label>
-                  <input type="email" required placeholder="nama@email.com" value={form.email} onChange={(e) => set("email", e.target.value)} />
+                  <label htmlFor="pc-f-email">Email *</label>
+                  <input id="pc-f-email" type="email" required aria-label="Email" placeholder="nama@email.com" value={form.email} onChange={(e) => set("email", e.target.value)} />
                 </div>
                 <div className="pc-form-group full">
-                  <label>Domisili Saat Ini *</label>
-                  <input type="text" required placeholder="Kecamatan, Kota/Kabupaten" value={form.domisili} onChange={(e) => set("domisili", e.target.value)} />
+                  <label htmlFor="pc-f-domisili">Domisili Saat Ini *</label>
+                  <input id="pc-f-domisili" type="text" required aria-label="Domisili saat ini" placeholder="Kecamatan, Kota/Kabupaten" value={form.domisili} onChange={(e) => set("domisili", e.target.value)} />
                 </div>
                 <div className="pc-form-clause">
                   ⚠️ <strong>Klausa Penempatan:</strong> Dengan mendaftar, kandidat menyatakan <strong>bersedia ditempatkan di lokasi studio Agency Potensi Creative Yogyakarta</strong> (Timoho / Berbah / Wiyoro) sesuai kebutuhan operasional manajemen.
                 </div>
                 <hr className="pc-form-divider" />
                 <div className="pc-form-group full">
-                  <label>Pendidikan Terakhir</label>
-                  <select value={form.pendidikan} onChange={(e) => set("pendidikan", e.target.value)}>
+                  <label htmlFor="pc-f-pendidikan">Pendidikan Terakhir</label>
+                  <select id="pc-f-pendidikan" aria-label="Pendidikan terakhir" value={form.pendidikan} onChange={(e) => set("pendidikan", e.target.value)}>
                     <option value="" disabled>Pilih pendidikan...</option>
                     <option>SMA / SMK</option>
                     <option>D3 / D4</option>
@@ -452,8 +494,8 @@ export const HostWarriorApplyPage = ({ jobSlug }) => {
                   </select>
                 </div>
                 <div className="pc-form-group full">
-                  <label>Pengalaman Host Live Streaming *</label>
-                  <select required value={form.pengalaman} onChange={(e) => set("pengalaman", e.target.value)}>
+                  <label htmlFor="pc-f-pengalaman">Pengalaman Host Live Streaming *</label>
+                  <select id="pc-f-pengalaman" required aria-label="Pengalaman host live streaming" value={form.pengalaman} onChange={(e) => set("pengalaman", e.target.value)}>
                     <option value="" disabled>Pilih pengalaman...</option>
                     <option>Belum pernah (siap belajar dari awal)</option>
                     <option>Kurang dari 6 bulan</option>
@@ -462,40 +504,40 @@ export const HostWarriorApplyPage = ({ jobSlug }) => {
                     <option>Lebih dari 2 tahun</option>
                   </select>
                 </div>
-                <div className="pc-form-group full">
+                <div className="pc-form-group full" role="group" aria-label="Niche atau kategori produk yang dikuasai">
                   <label>Niche / Kategori Produk yang Dikuasai *</label>
                   <div className="pc-niche-grid">
                     {NICHE_OPTIONS.map((n) => (
                       <label className={`pc-niche-item${form.niches.includes(n.value) ? " pc-niche-checked" : ""}`} key={n.value}>
-                        <input type="checkbox" checked={form.niches.includes(n.value)} onChange={() => toggleNiche(n.value)} />
+                        <input type="checkbox" aria-label={`Niche ${n.value}`} checked={form.niches.includes(n.value)} onChange={() => toggleNiche(n.value)} />
                         <span>{n.label}</span>
                       </label>
                     ))}
                   </div>
                 </div>
                 <div className="pc-form-group full">
-                  <label>Link Portofolio / Akun Live Streaming</label>
-                  <input type="url" placeholder="https://tiktok.com/@akunanda atau link Shopee Live" value={form.portofolio} onChange={(e) => set("portofolio", e.target.value)} />
+                  <label htmlFor="pc-f-portofolio">Link Portofolio / Akun Live Streaming</label>
+                  <input id="pc-f-portofolio" type="url" aria-label="Link portofolio atau akun live streaming" placeholder="https://tiktok.com/@akunanda atau link Shopee Live" value={form.portofolio} onChange={(e) => set("portofolio", e.target.value)} />
                 </div>
                 <div className="pc-form-group full">
-                  <label>Upload CV (PDF/DOCX) *</label>
-                  <label className="pc-cv-drop">
+                  <label htmlFor="pc-f-cv">Upload CV (PDF/DOCX) *</label>
+                  <label className="pc-cv-drop" htmlFor="pc-f-cv-file" aria-label="Pilih file CV dari perangkat">
                     <Upload size={18} />
                     <span>{form.cv ? `${form.cv.name} (${Math.round(form.cv.size / 1024)} KB)` : "Pilih file CV dari perangkat Anda (PDF/DOCX, max 10MB)"}</span>
-                    <input type="file" accept=".pdf,.docx,.doc" onChange={(e) => set("cv", e.target.files?.[0] ?? null)} style={{ display: "none" }} />
+                    <input id="pc-f-cv-file" type="file" accept=".pdf,.docx,.doc" aria-label="Pilih file CV" onChange={(e) => set("cv", e.target.files?.[0] ?? null)} style={{ display: "none" }} />
                   </label>
                   <span className="pc-form-hint">CV otomatis tersimpan ke sistem HR kami dan dianalisa AI — tidak perlu upload Google Drive.</span>
                 </div>
                 <div className="pc-form-group full">
-                  <label>Produk / Tema yang Pernah Dibawakan</label>
-                  <textarea placeholder="Contoh: skincare, beauty tools, fashion wanita, produk herbal, FMCG..." value={form.tema} onChange={(e) => set("tema", e.target.value)} />
+                  <label htmlFor="pc-f-tema">Produk / Tema yang Pernah Dibawakan</label>
+                  <textarea id="pc-f-tema" aria-label="Produk atau tema yang pernah dibawakan" placeholder="Contoh: skincare, beauty tools, fashion wanita, produk herbal, FMCG..." value={form.tema} onChange={(e) => set("tema", e.target.value)} />
                 </div>
                 <div className="pc-form-group full">
-                  <label>Ceritakan Kenapa Kamu Layak Jadi Host Warrior Kami</label>
-                  <textarea placeholder="Tunjukkan mental warrior kamu di sini — apa yang membuat kamu berbeda dari pelamar lain?" value={form.alasan} onChange={(e) => set("alasan", e.target.value)} />
+                  <label htmlFor="pc-f-alasan">Ceritakan Kenapa Kamu Layak Jadi Host Warrior Kami</label>
+                  <textarea id="pc-f-alasan" aria-label="Alasan layak jadi Host Warrior" placeholder="Tunjukkan mental warrior kamu di sini — apa yang membuat kamu berbeda dari pelamar lain?" value={form.alasan} onChange={(e) => set("alasan", e.target.value)} />
                 </div>
                 <div className="pc-form-submit-row">
-                  <button type="submit" className="pc-btn-submit" disabled={loading}>
+                  <button type="submit" className="pc-btn-submit" disabled={loading} aria-live="polite" aria-busy={loading}>
                     {loading ? "⏳ Mengirim Data ke Sistem..." : "⚔️ Kirim Pendaftaran — Siap Bertarung!"}
                   </button>
                   <p className="pc-form-note">Dengan mendaftar, Anda menyetujui proses seleksi yang berlaku dan klausa penempatan di atas. Seluruh data dijaga kerahasiaannya.<br /><strong>dianaraihanum@gmail.com</strong> | <strong>0831 6512 8857</strong></p>

@@ -23,10 +23,9 @@ type Bindings = {
   WEBHOOK_SECRET?: string;
   META_APP_ID?: string;
   META_APP_SECRET?: string;
-  TOKEN_ENC_SECRET?: string;
 };
 
-type MessageBatch<T> = { messages: { body: T; ack(): void; retry(): void }[] };
+type MessageBatch<T> = { messages: { body: T; ack(): void; retry(): void; attempts: number }[] };
 
 function sanitizeFileName(name: string): string {
   return name.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 80);
@@ -149,14 +148,20 @@ app.get("/api/audit-log", async (c) => {
 app.get("/api/export/:table", async (c) => {
   if (!requireAdmin(c.env.ADMIN_TOKEN, c.req.header("authorization"))) return c.json({ error: "unauthorized" }, 401);
   const table = c.req.param("table");
-  const allowed = ["applicants", "bookings", "jobs", "social_posts"];
-  if (!allowed.includes(table)) return c.json({ error: "invalid table" }, 400);
-  const { results } = await c.env.DB.prepare(`SELECT * FROM ${table} LIMIT 5000`).all();
+  const queries: Record<string, string> = {
+    applicants: "SELECT * FROM applicants LIMIT 5000",
+    bookings: "SELECT * FROM bookings LIMIT 5000",
+    jobs: "SELECT * FROM jobs LIMIT 5000",
+    social_posts: "SELECT * FROM social_posts LIMIT 5000",
+  };
+  const sql = queries[table];
+  if (!sql) return c.json({ error: "invalid table" }, 400);
+  const { results } = await c.env.DB.prepare(sql).all();
   return c.json({ table, rows: results });
 });
 
 app.get("/api/jobs", async (c) => {
-  const { results } = await c.env.DB.prepare("SELECT * FROM jobs ORDER BY created_at DESC").all();
+  const { results } = await c.env.DB.prepare("SELECT id, slug, title, description, status, created_at FROM jobs ORDER BY created_at DESC").all();
   return c.json({ jobs: results });
 });
 
@@ -352,6 +357,21 @@ app.post("/api/social/publish", async (c) => {
   return c.json(res, res.ok ? 200 : 400);
 });
 
+async function hitRateLimit(db: any, key: string, limit: number): Promise<boolean> {
+  const now = new Date().toISOString();
+  const windowStart = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+  const rl = (await db.prepare("SELECT count, window_start FROM rate_limits WHERE key = ?").bind(key).first()) as any;
+  if (rl && rl.window_start > windowStart) {
+    if (rl.count >= limit) return false;
+    await db.prepare("UPDATE rate_limits SET count = count + 1 WHERE key = ?").bind(key).run();
+    return true;
+  }
+  await db.prepare("INSERT INTO rate_limits (key, count, window_start) VALUES (?, 1, ?) ON CONFLICT(key) DO UPDATE SET count = 1, window_start = ?")
+    .bind(key, now, now)
+    .run();
+  return true;
+}
+
 app.post("/api/apply", async (c) => {
   const form = await c.req.formData();
   const file = form.get("cv") as File | null;
@@ -363,23 +383,17 @@ app.post("/api/apply", async (c) => {
   const ig = String(form.get("ig") ?? "").trim().slice(0, 50);
 
   const ip = c.req.header("cf-connecting-ip") || c.req.header("x-real-ip") || c.req.header("x-forwarded-for")?.split(",")[0]?.trim() || "";
-  const rlKey = ip ? `apply:${ip}` : null;
-  if (rlKey) {
-    const now = new Date().toISOString();
-    const windowStart = new Date(Date.now() - 60 * 60 * 1000).toISOString();
-    const rl = (await c.env.DB.prepare("SELECT count, window_start FROM rate_limits WHERE key = ?").bind(rlKey).first()) as any;
-    if (rl && rl.window_start > windowStart) {
-      if (rl.count >= 10) return c.json({ error: "too many applications, try later" }, 429);
-      await c.env.DB.prepare("UPDATE rate_limits SET count = count + 1 WHERE key = ?").bind(rlKey).run();
-    } else {
-      await c.env.DB.prepare("INSERT INTO rate_limits (key, count, window_start) VALUES (?, 1, ?) ON CONFLICT(key) DO UPDATE SET count = 1, window_start = ?")
-        .bind(rlKey, now, now)
-        .run();
-    }
+  if (ip && !(await hitRateLimit(c.env.DB, `apply:ip:${ip}`, 10))) {
+    return c.json({ error: "too many applications, try later" }, 429);
   }
 
   if (!file || !jobId || !email || !name) return c.json({ error: "cv, jobId, email, name required" }, 400);
   if (!isValidEmail(email)) return c.json({ error: "invalid email" }, 400);
+  if (email.length > 120) return c.json({ error: "email too long" }, 400);
+  if (name.length > 120) return c.json({ error: "name too long" }, 400);
+  if (!(await hitRateLimit(c.env.DB, `apply:email:${email}`, 3))) {
+    return c.json({ error: "too many applications from this email, try later" }, 429);
+  }
   if (file.size > 10 * 1024 * 1024) return c.json({ error: "CV max 10MB" }, 413);
   if (!/^(application\/pdf|application\/msword|application\/vnd\.openxmlformats)/.test(file.type) && !file.name.match(/\.(pdf|docx?)$/i)) {
     return c.json({ error: "CV must be PDF/DOCX" }, 400);
@@ -436,10 +450,13 @@ app.post("/api/apply", async (c) => {
 });
 
 app.post("/api/apply/sync", async (c) => {
-  if (!requireAdmin(c.env.ADMIN_TOKEN, c.req.header("authorization"))) return c.json({ error: "unauthorized" }, 401);
   const b = await c.req.json<{ id?: string; jobId: string; name: string; email: string; wa?: string; tiktok?: string; ig?: string; appliedAt?: string }>();
   if (!b.jobId || !b.email || !b.name) return c.json({ error: "jobId, email, name required" }, 400);
   const email = String(b.email).trim().toLowerCase();
+  if (!isValidEmail(email)) return c.json({ error: "invalid email" }, 400);
+  if (!(await hitRateLimit(c.env.DB, `sync:email:${email}`, 5))) {
+    return c.json({ error: "too many sync attempts, try later" }, 429);
+  }
   const jobExists = (await c.env.DB.prepare("SELECT id FROM jobs WHERE id = ?").bind(b.jobId).first()) as any;
   if (!jobExists) return c.json({ error: "job not found" }, 404);
   const existing = (await c.env.DB.prepare("SELECT id FROM applicants WHERE job_id = ? AND email = ?").bind(b.jobId, email).first()) as any;
@@ -683,14 +700,23 @@ app.post("/api/psychotest/send/:applicantId", async (c) => {
   return c.json({ queued: !sent, sent, psychotest_url: link });
 });
 
+function sanitizeText(s: string): string {
+  return String(s ?? "")
+    .replace(/<[^>]*>/g, "")
+    .replace(/javascript:/gi, "")
+    .replace(/on\w+\s*=/gi, "")
+    .trim();
+}
+
 app.post("/api/psychotest/result/:applicantId", async (c) => {
   if (!requireAdmin(c.env.ADMIN_TOKEN, c.req.header("authorization"))) return c.json({ error: "unauthorized" }, 401);
   const applicantId = c.req.param("applicantId");
   const { score, notes } = await c.req.json<{ score?: number; notes?: string }>();
   const row = (await c.env.DB.prepare("SELECT id FROM applicants WHERE id = ?").bind(applicantId).first()) as any;
   if (!row) return c.json({ error: "not found" }, 404);
-  await c.env.DB.prepare("UPDATE applicants SET psychotest_score = ?, psychotest_notes = ?, status = 'tested' WHERE id = ?").bind(score ?? null, notes ?? "", applicantId).run();
-  return c.json({ ok: true, id: applicantId, score: score ?? null, notes: notes ?? "", status: "tested" });
+  const safeNotes = sanitizeText(String(notes ?? "")).slice(0, 2000);
+  await c.env.DB.prepare("UPDATE applicants SET psychotest_score = ?, psychotest_notes = ?, status = 'tested' WHERE id = ?").bind(score ?? null, safeNotes, applicantId).run();
+  return c.json({ ok: true, id: applicantId, score: score ?? null, notes: safeNotes, status: "tested" });
 });
 
 app.post("/api/psychotest/callback", async (c) => {
@@ -699,6 +725,7 @@ app.post("/api/psychotest/callback", async (c) => {
   if (!expected || provided !== expected) return c.json({ error: "unauthorized" }, 401);
   const body = await c.req.json<{ applicantId?: string; email?: string; score?: number; notes?: string }>();
   if (!body.email && !body.applicantId) return c.json({ error: "email or applicantId required" }, 400);
+  const safeNotes = sanitizeText(String(body.notes ?? "")).slice(0, 2000);
   let row: any;
   if (body.applicantId) {
     row = (await c.env.DB.prepare("SELECT id, status FROM applicants WHERE id = ?").bind(body.applicantId).first()) as any;
@@ -708,7 +735,7 @@ app.post("/api/psychotest/callback", async (c) => {
   if (!row) return c.json({ error: "applicant not found" }, 404);
   if (row.status !== "test_sent") return c.json({ error: `applicant not awaiting psychotest (status: ${row.status})` }, 409);
   await c.env.DB.prepare("UPDATE applicants SET psychotest_score = ?, psychotest_notes = ?, status = 'tested' WHERE id = ?")
-    .bind(body.score ?? null, body.notes ?? "", row.id)
+    .bind(body.score ?? null, safeNotes, row.id)
     .run();
   return c.json({ ok: true, id: row.id, status: "tested" });
 });
@@ -758,8 +785,9 @@ app.post("/api/applicants/:id/notes", async (c) => {
   const { notes } = await c.req.json<{ notes: string }>();
   const row = (await c.env.DB.prepare("SELECT id FROM applicants WHERE id = ?").bind(id).first()) as any;
   if (!row) return c.json({ error: "not found" }, 404);
-  await c.env.DB.prepare("UPDATE applicants SET notes = ? WHERE id = ?").bind(notes || "", id).run();
-  return c.json({ ok: true, id, notes });
+  const safeNotes = sanitizeText(String(notes ?? "")).slice(0, 4000);
+  await c.env.DB.prepare("UPDATE applicants SET notes = ? WHERE id = ?").bind(safeNotes, id).run();
+  return c.json({ ok: true, id, notes: safeNotes });
 });
 
 app.get("/api/templates", async (c) => {
@@ -796,11 +824,18 @@ app.get("/api/models", async (c) => {
   }
 });
 
+const SECRET_SETTING_KEYS = new Set(["openrouter_key"]);
+
+function maskSecret(value: string): string {
+  if (value.length <= 8) return "••••••••";
+  return `${value.slice(0, 4)}••••${value.slice(-4)}`;
+}
+
 app.get("/api/settings", async (c) => {
   if (!requireAdmin(c.env.ADMIN_TOKEN, c.req.header("authorization"))) return c.json({ error: "unauthorized" }, 401);
   const { results } = await c.env.DB.prepare("SELECT key, value FROM settings").all() as any;
   const map: Record<string, string> = {};
-  for (const r of results) map[r.key] = r.value;
+  for (const r of results) map[r.key] = SECRET_SETTING_KEYS.has(r.key) ? maskSecret(r.value) : r.value;
   return c.json({ settings: map });
 });
 
@@ -808,6 +843,11 @@ app.post("/api/settings", async (c) => {
   if (!requireAdmin(c.env.ADMIN_TOKEN, c.req.header("authorization"))) return c.json({ error: "unauthorized" }, 401);
   const body = await c.req.json<{ key: string; value: string }>();
   if (!body.key) return c.json({ error: "key required" }, 400);
+  const existing = (await c.env.DB.prepare("SELECT value FROM settings WHERE key = ?").bind(body.key).first()) as any;
+  if (SECRET_SETTING_KEYS.has(body.key) && typeof body.value === "string" && body.value.includes("••")) {
+    return c.json({ error: "masked value cannot be saved - enter a new key" }, 400);
+  }
+  if (!body.key.match(/^[a-z_]{1,40}$/)) return c.json({ error: "invalid key format" }, 400);
   await c.env.DB.prepare(
     "INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE SET value = ?, updated_at = ?"
   )
@@ -930,7 +970,18 @@ export default {
         msg.ack();
       } catch (e) {
         try {
-          msg.retry();
+          if (msg.attempts >= 3) {
+            msg.ack();
+            await env.DB.prepare("UPDATE applicants SET status = 'analyzed', ai_summary = ? WHERE id = ? AND status = 'pending'")
+              .bind(`[ANALISIS GAGAL] ${(e as Error)?.message?.slice(0, 150) || "unknown error"} — jalankan Analisis ulang manual.`, msg.body.applicantId)
+              .run();
+            const hrEmail = await getSetting(env, "hr_alert_email");
+            if (hrEmail) {
+              await sendEmail(env, hrEmail, "[Potensi Creative] Analisis CV Gagal", `<div style="font-family:system-ui;padding:16px"><p>Analisis AI untuk pelamar <b>${msg.body.applicantId}</b> gagal setelah beberapa percobaan.</p><p>Error: ${escapeHtml(String((e as Error)?.message || "unknown")).slice(0, 200)}</p><p>Buka dashboard → Review CV → klik Analisis ulang manual.</p></div>`);
+            }
+          } else {
+            msg.retry();
+          }
         } catch {
           msg.ack();
         }

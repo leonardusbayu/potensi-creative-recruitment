@@ -73,6 +73,7 @@ Candidate handles: TikTok=${opts.tiktok || "none"}, IG=${opts.ig || "none"}`;
         max_tokens: 800,
         response_format: { type: "json_object" },
       }),
+      signal: AbortSignal.timeout(30000),
     });
     if (!r.ok) return null;
     const j = await r.json();

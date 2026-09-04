@@ -19,17 +19,18 @@ import {
 } from 'lucide-react';
 
 export const PublicBookingView = () => {
-  const { 
-    eventTypes, 
-    availability, 
-    bookings, 
-    brandSettings, 
+  const {
+    eventTypes,
+    availability,
+    bookings,
+    brandSettings,
     createBooking,
     selectedPublicEventId,
     setSelectedPublicEventId,
     jobs,
     markApplicantBooked,
-    addD1Booking
+    addD1Booking,
+    showToast
   } = useBooking();
 
   useEffect(() => {
@@ -98,7 +99,7 @@ export const PublicBookingView = () => {
           verifiedApplicantId = payload.applicantId ?? verifiedApplicantId;
         } catch {}
       } catch (e) {
-        alert(String(e));
+        showToast(`Gagal mengunci jadwal: ${String(e?.message || e).slice(0, 120)}. Silakan coba pilih slot lagi.`, "error");
         return;
       }
     }
