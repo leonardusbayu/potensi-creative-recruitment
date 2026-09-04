@@ -405,8 +405,9 @@ app.post("/api/apply", async (c) => {
   const crossJob = (await c.env.DB.prepare("SELECT id, job_id FROM applicants WHERE email = ? AND status != 'rejected' LIMIT 1").bind(email).first()) as any;
   if (crossJob) return c.json({ error: "already applied to another active job", existingId: crossJob.id, existingJobId: crossJob.job_id }, 409);
 
-  const jobExists = (await c.env.DB.prepare("SELECT id FROM jobs WHERE id = ?").bind(jobId).first()) as any;
+  const jobExists = (await c.env.DB.prepare("SELECT id, status FROM jobs WHERE id = ?").bind(jobId).first()) as any;
   if (!jobExists) return c.json({ error: "job not found" }, 404);
+  if (jobExists.status !== "published") return c.json({ error: "this job is no longer accepting applications" }, 403);
 
   const extraParts: string[] = [];
   const extraFields: [string, string][] = [
@@ -415,9 +416,10 @@ app.post("/api/apply", async (c) => {
     ["pendidikan", "Pendidikan"],
     ["pengalaman", "Pengalaman Live"],
     ["portofolio", "Portofolio"],
+    ["video", "Video Perkenalan"],
+    ["foto", "Foto/Sosial"],
     ["tema", "Produk/Tema"],
     ["alasan", "Alasan"],
-    ["video", "Video Perkenalan"],
   ];
   for (const [field, label] of extraFields) {
     const v = String(form.get(field) ?? "").trim().slice(0, 2000);
@@ -446,6 +448,26 @@ app.post("/api/apply", async (c) => {
     await c.env.CV_QUEUE.send({ applicantId, jobId });
   } catch {}
 
+  try {
+    const hrEmail = await getSetting(c.env, "hr_alert_email");
+    if (hrEmail) {
+      const logId = `em_${Date.now()}_na`;
+      await c.env.DB.prepare("INSERT INTO email_logs (id, applicant_id, type, to_email, subject, status, sent_at) VALUES (?, ?, ?, ?, ?, 'queued', ?)")
+        .bind(logId, applicantId, "hr_new_applicant", hrEmail, `[Potensi Creative] Pelamar Baru: ${name}`, new Date().toISOString())
+        .run();
+      c.executionCtx.waitUntil((async () => {
+        try {
+          const safeN = escapeHtml(name);
+          const nHtml = `<div style="font-family:system-ui;padding:16px"><p>Pelamar baru masuk:</p><p><b>${safeN}</b> (${escapeHtml(email)})<br>Posisi: ${escapeHtml(String(jobId))}</p><p>Buka dashboard → Review CV untuk melihat CV & skor AI.</p></div>`;
+          const sent = await sendEmail(c.env, hrEmail, `[Potensi Creative] Pelamar Baru: ${name}`, nHtml);
+          await c.env.DB.prepare("UPDATE email_logs SET status = ?, sent_at = ? WHERE id = ?")
+            .bind(sent ? "sent" : "failed", new Date().toISOString(), logId)
+            .run();
+        } catch {}
+      })());
+    }
+  } catch {}
+
   return c.json({ applicantId, status: "pending" });
 });
 
@@ -457,8 +479,9 @@ app.post("/api/apply/sync", async (c) => {
   if (!(await hitRateLimit(c.env.DB, `sync:email:${email}`, 5))) {
     return c.json({ error: "too many sync attempts, try later" }, 429);
   }
-  const jobExists = (await c.env.DB.prepare("SELECT id FROM jobs WHERE id = ?").bind(b.jobId).first()) as any;
+  const jobExists = (await c.env.DB.prepare("SELECT id, status FROM jobs WHERE id = ?").bind(b.jobId).first()) as any;
   if (!jobExists) return c.json({ error: "job not found" }, 404);
+  if (jobExists.status !== "published") return c.json({ error: "this job is no longer accepting applications" }, 403);
   const existing = (await c.env.DB.prepare("SELECT id FROM applicants WHERE job_id = ? AND email = ?").bind(b.jobId, email).first()) as any;
   if (existing) {
     await c.env.DB.prepare("UPDATE applicants SET name = ?, wa = ?, tiktok = ?, ig = ? WHERE id = ?")
@@ -598,8 +621,14 @@ app.post("/api/bookings/interview", async (c) => {
   const payload = await verifyJwt(token, c.env.JWT_SECRET);
   if (!payload) return c.json({ error: "invalid or expired token" }, 401);
   const applicantId = payload.applicantId;
-  const applicant = (await c.env.DB.prepare("SELECT id, name, email FROM applicants WHERE id = ?").bind(applicantId).first()) as any;
+  const applicant = (await c.env.DB.prepare("SELECT id, name, email, status FROM applicants WHERE id = ?").bind(applicantId).first()) as any;
   if (!applicant) return c.json({ error: "applicant not found" }, 404);
+  if (applicant.status === "rejected") return c.json({ error: "this invitation is no longer active" }, 403);
+  const today = new Date().toISOString().slice(0, 10);
+  const maxDate = new Date(Date.now() + 60 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  if (date < today) return c.json({ error: "cannot book a slot in the past" }, 400);
+  if (date > maxDate) return c.json({ error: "cannot book more than 60 days ahead" }, 400);
+  if (Number(time.split(":")[0]) < 6 || Number(time.split(":")[0]) > 23) return c.json({ error: "slot outside working hours (06:00-23:59 WIB)" }, 400);
   const conflict = (await c.env.DB.prepare("SELECT id FROM bookings WHERE date = ? AND time = ? AND status = 'confirmed'").bind(date, time).first()) as any;
   if (conflict) return c.json({ error: "slot already booked, pick another time" }, 409);
   const bid = `bkg_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
@@ -612,6 +641,12 @@ app.post("/api/bookings/interview", async (c) => {
     .bind(bid, applicantId, payload.jobId || jobId || "", "evt-potensi-interview", "Interview Live Streamer", date, time, endTime, applicant.name, applicant.email, "google_meet", meetingLink, new Date().toISOString())
     .run();
   await c.env.DB.prepare("UPDATE applicants SET status = 'booked' WHERE id = ?").bind(applicantId).run();
+  const safeName = escapeHtml(applicant.name);
+  const confHtml = `<div style="font-family:system-ui;padding:24px"><h2>Hai ${safeName},</h2><p>Jadwal interview Anda <b>terkonfirmasi</b>! 🎉</p><p><b>Tanggal:</b> ${date}<br><b>Waktu:</b> ${time} - ${endTime} WIB<br><b>Link Meeting:</b> <a href="${meetingLink}">${meetingLink}</a></p><p>Simpan email ini. Anda bisa ubah jadwal atau batalkan dari <a href="${c.env.APP_URL}/?token=${token}">halaman status lamaran</a>.</p><p>Sampai jumpa! - HR Team Potensi Creative</p></div>`;
+  const confSent = await sendEmail(c.env, applicant.email, "Konfirmasi Jadwal Interview - Potensi Creative", confHtml);
+  await c.env.DB.prepare("INSERT INTO email_logs (id, applicant_id, type, to_email, subject, status, sent_at) VALUES (?, ?, ?, ?, ?, ?, ?)")
+    .bind(`em_${Date.now()}_bk`, applicantId, "booking_confirm", applicant.email, "Konfirmasi Jadwal Interview - Potensi Creative", confSent ? "sent" : "queued", new Date().toISOString())
+    .run();
   return c.json({ ok: true, booking: { id: bid, applicantId, jobId: payload.jobId || jobId || "", eventTitle: "Interview Live Streamer", date, time, endTime, timezone: "Asia/Jakarta", inviteeName: applicant.name, inviteeEmail: applicant.email, meetingType: "google_meet", meetingLink, status: "confirmed" } });
 });
 
@@ -625,6 +660,10 @@ app.post("/api/bookings/:id/reschedule", async (c) => {
   const booking = (await c.env.DB.prepare("SELECT id, applicant_id FROM bookings WHERE id = ?").bind(id).first()) as any;
   if (!booking) return c.json({ error: "booking not found" }, 404);
   if (booking.applicant_id !== payload.applicantId) return c.json({ error: "not your booking" }, 403);
+  const todayRs = new Date().toISOString().slice(0, 10);
+  const maxDateRs = new Date(Date.now() + 60 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  if (date < todayRs) return c.json({ error: "cannot reschedule to a past date" }, 400);
+  if (date > maxDateRs) return c.json({ error: "cannot reschedule more than 60 days ahead" }, 400);
   const conflict = (await c.env.DB.prepare("SELECT id FROM bookings WHERE date = ? AND time = ? AND status = 'confirmed' AND id != ?").bind(date, time, id).first()) as any;
   if (conflict) return c.json({ error: "slot already booked" }, 409);
   const startMins = Number(time.split(":")[0]) * 60 + Number(time.split(":")[1]);
@@ -639,6 +678,23 @@ app.post("/api/bookings/:id/reschedule", async (c) => {
       .run();
   }
   return c.json({ ok: true, id, date, time, endTime });
+});
+
+// Candidate-facing: return own application status + booking (JWT-scoped, no other applicants' PII)
+app.get("/api/my-status", async (c) => {
+  const token = c.req.query("token") || "";
+  const payload = await verifyJwt(token, c.env.JWT_SECRET);
+  if (!payload) return c.json({ error: "invalid or expired token" }, 401);
+  const app = (await c.env.DB.prepare("SELECT id, name, email, status, score, ai_summary, psychotest_link, applied_at FROM applicants WHERE id = ?").bind(payload.applicantId).first()) as any;
+  if (!app) return c.json({ error: "applicant not found" }, 404);
+  const booking = (await c.env.DB.prepare("SELECT id, date, time, end_time, meeting_link, status FROM bookings WHERE applicant_id = ? AND status = 'confirmed' ORDER BY created_at DESC LIMIT 1").bind(app.id).first()) as any;
+  return c.json({
+    status: app.status,
+    score: app.score,
+    appliedAt: app.applied_at,
+    psychotestLink: app.psychotest_link || null,
+    booking: booking ? { id: booking.id, date: booking.date, time: booking.time, endTime: booking.end_time, meetingLink: booking.meeting_link, status: booking.status } : null,
+  });
 });
 
 app.post("/api/bookings/:id/cancel", async (c) => {

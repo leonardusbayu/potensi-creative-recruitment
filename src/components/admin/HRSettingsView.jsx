@@ -8,19 +8,29 @@ export const HRSettingsView = () => {
   const [tpl, setTpl] = useState({ type: "invite", subject: "", body: "" });
   const [templates, setTemplates] = useState([]);
   const [psyUrl, setPsyUrl] = useState("");
+  const [alertEmail, setAlertEmail] = useState("");
 
   useEffect(() => {
     const token = localStorage.getItem("calendarjet_admin_token") || "";
     if (!token) return;
     fetch("/api/settings", { headers: { authorization: `Bearer ${token}` } })
       .then((r) => r.json())
-      .then((j) => { if (j.settings?.psychotest_url) setPsyUrl(j.settings.psychotest_url); })
+      .then((j) => {
+        if (j.settings?.psychotest_url) setPsyUrl(j.settings.psychotest_url);
+        if (j.settings?.hr_alert_email) setAlertEmail(j.settings.hr_alert_email);
+      })
       .catch(() => {});
   }, []);
 
   const savePsyUrl = async () => {
     const ok = await saveSetting("psychotest_url", psyUrl.trim());
     showToast(ok ? "URL psikotes disimpan" : "Gagal simpan URL psikotes", ok ? "success" : "error");
+  };
+
+  const saveAlertEmail = async () => {
+    if (alertEmail.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(alertEmail.trim())) return showToast("Email tidak valid", "error");
+    const ok = await saveSetting("hr_alert_email", alertEmail.trim());
+    showToast(ok ? "Email alert HR disimpan" : "Gagal simpan email alert", ok ? "success" : "error");
   };
 
   useEffect(() => {
@@ -55,6 +65,15 @@ export const HRSettingsView = () => {
         <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
           <input value={psyUrl} onChange={(e) => setPsyUrl(e.target.value)} placeholder="https://sikotes... / URL aplikasi psikotes" style={{ flex: 1, minWidth: 240, padding: "10px 12px", borderRadius: 8, border: "1px solid var(--border-default)" }} />
           <button onClick={savePsyUrl} style={{ padding: "10px 16px", borderRadius: 8, background: "#d97706", color: "#fff", fontWeight: 600 }}>Simpan URL</button>
+        </div>
+      </div>
+
+      <div style={{ marginTop: 20, background: "var(--bg-surface)", border: "1px solid var(--border-default)", borderRadius: 12, padding: 20 }}>
+        <h3 style={{ fontWeight: 700, display: "flex", gap: 8, alignItems: "center" }}><Mail size={16} /> Email Alert HR</h3>
+        <p style={{ fontSize: 12, color: "var(--text-secondary)", marginTop: 4 }}>Email ini menerima pemberitahuan: post sosmed gagal terbit, analisis CV gagal, dan notifikasi penting lainnya.</p>
+        <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
+          <input type="email" value={alertEmail} onChange={(e) => setAlertEmail(e.target.value)} placeholder="hr@potensi-creative.id" aria-label="Email alert HR" style={{ flex: 1, minWidth: 240, padding: "10px 12px", borderRadius: 8, border: "1px solid var(--border-default)" }} />
+          <button onClick={saveAlertEmail} style={{ padding: "10px 16px", borderRadius: 8, background: "#a8201a", color: "#fff", fontWeight: 600 }}>Simpan</button>
         </div>
       </div>
 

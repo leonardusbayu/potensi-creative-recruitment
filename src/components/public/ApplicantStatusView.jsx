@@ -23,6 +23,21 @@ export const ApplicantStatusView = ({ token }) => {
   const [msg, setMsg] = useState("");
 
   useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await fetch(`/api/my-status?token=${encodeURIComponent(token)}`);
+        if (!r.ok) return;
+        const j = await r.json();
+        if (cancelled) return;
+        if (j.status) setStatus(j.status);
+        if (j.booking) setBooking(j.booking);
+      } catch {}
+    })();
+    return () => { cancelled = true; };
+  }, [token]);
+
+  useEffect(() => {
     try {
       const payload = JSON.parse(atob(token.split(".")[0]));
       const app = applicants.find((a) => a.id === payload.applicantId);

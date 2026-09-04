@@ -21,7 +21,7 @@ export const HostWarriorApplyPage = ({ jobSlug }) => {
   const [form, setForm] = useState({
     name: "", usia: "", wa: "", email: "", domisili: "",
     pendidikan: "", pengalaman: "", niches: [],
-    portofolio: "", cv: null, tema: "", alasan: "",
+    portofolio: "", cv: null, tema: "", alasan: "", video: "", foto: "",
   });
   const [loading, setLoading] = useState(false);
   const [toast, setToast] = useState("");
@@ -114,6 +114,8 @@ export const HostWarriorApplyPage = ({ jobSlug }) => {
       fd.append("pendidikan", form.pendidikan);
       fd.append("pengalaman", form.pengalaman);
       fd.append("portofolio", form.portofolio.trim());
+      fd.append("video", form.video.trim());
+      fd.append("foto", form.foto.trim());
       fd.append("tema", form.tema.trim());
       fd.append("alasan", form.alasan.trim());
       form.niches.forEach((n) => fd.append("niche", n));
@@ -134,7 +136,7 @@ export const HostWarriorApplyPage = ({ jobSlug }) => {
       else if (res?.error) showToast(`Gagal mengirim: ${res.error}`, true);
       else {
         showToast("🎉 Pendaftaran terkirim! Tim HR akan menghubungi Anda dalam 2-3 hari kerja.");
-        setForm({ name: "", usia: "", wa: "", email: "", domisili: "", pendidikan: "", pengalaman: "", niches: [], portofolio: "", cv: null, tema: "", alasan: "" });
+        setForm({ name: "", usia: "", wa: "", email: "", domisili: "", pendidikan: "", pengalaman: "", niches: [], portofolio: "", cv: null, tema: "", alasan: "", video: "", foto: "" });
         document.getElementById("pc-form")?.scrollIntoView({ behavior: "smooth", block: "start" });
       }
     } catch (err) {
@@ -527,6 +529,15 @@ export const HostWarriorApplyPage = ({ jobSlug }) => {
                     <input id="pc-f-cv-file" type="file" accept=".pdf,.docx,.doc" aria-label="Pilih file CV" onChange={(e) => set("cv", e.target.files?.[0] ?? null)} style={{ display: "none" }} />
                   </label>
                   <span className="pc-form-hint">CV otomatis tersimpan ke sistem HR kami dan dianalisa AI — tidak perlu upload Google Drive.</span>
+                </div>
+                <div className="pc-form-group full">
+                  <label htmlFor="pc-f-video">Link Video Perkenalan + Demo Jualan (≤1 menit)</label>
+                  <input id="pc-f-video" type="url" aria-label="Link video perkenalan" placeholder="https://drive.google.com/file/... atau link TikTok video" value={form.video} onChange={(e) => set("video", e.target.value)} />
+                  <span className="pc-form-hint">Upload video ke Google Drive (klik kanan → Share → Anyone with the link) lalu tempel link di sini.</span>
+                </div>
+                <div className="pc-form-group full">
+                  <label htmlFor="pc-f-foto">Link Foto Terbaru / Profil Media Sosial Aktif</label>
+                  <input id="pc-f-foto" type="url" aria-label="Link foto terbaru atau profil media sosial" placeholder="https://instagram.com/akunanda atau link foto" value={form.foto} onChange={(e) => set("foto", e.target.value)} />
                 </div>
                 <div className="pc-form-group full">
                   <label htmlFor="pc-f-tema">Produk / Tema yang Pernah Dibawakan</label>

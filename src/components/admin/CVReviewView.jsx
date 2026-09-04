@@ -84,6 +84,24 @@ export const CVReviewView = ({ initialFilter = "all", initialQuery = "" }) => {
   const openNotes = (a) => { setNotesFor(a); setNotesText(a.notes || ""); };
   const saveNotes = async () => { if (notesFor) await saveApplicantNotes(notesFor.id, notesText); setNotesFor(null); showToast("Catatan disimpan", "success"); };
 
+  const [detailFor, setDetailFor] = useState(null);
+  const [detailAnalyses, setDetailAnalyses] = useState([]);
+  const [detailLoading, setDetailLoading] = useState(false);
+
+  const openDetail = async (a) => {
+    setDetailFor(a);
+    setDetailAnalyses([]);
+    setDetailLoading(true);
+    try {
+      const token = localStorage.getItem("calendarjet_admin_token") || "";
+      const r = await fetch(`/api/cv/${a.id}`, { headers: { authorization: `Bearer ${token}` } });
+      if (r.ok) { const j = await r.json(); setDetailAnalyses(j.analyses || []); }
+    } catch {}
+    setDetailLoading(false);
+  };
+
+  const parseJson = (s) => { try { return JSON.parse(s); } catch { return null; } };
+
   const openCV = (id) => {
     const token = localStorage.getItem("calendarjet_admin_token") || "";
     window.open(`/api/cv/${id}/file`, "_blank");
@@ -169,6 +187,7 @@ export const CVReviewView = ({ initialFilter = "all", initialQuery = "" }) => {
                   <td style={{ padding: "10px 12px", fontWeight: 700 }}>{a.score ?? "-"}</td>
                   <td style={{ padding: "10px 12px" }}>{badge(a.status, a.score)}</td>
                   <td style={{ padding: "10px 12px", display: "flex", gap: 6, flexWrap: "wrap" }}>
+                    <button onClick={() => openDetail(a)} title="Detail lengkap" style={{ padding: "6px 8px", borderRadius: 8, border: "1px solid var(--border-default)", background: "#fff", color: "#a8201a", fontWeight: 700 }}><Eye size={14} /></button>
                     <button onClick={() => openCV(a.id)} title="Lihat CV" style={{ padding: "6px 8px", borderRadius: 8, border: "1px solid var(--border-default)", background: "#fff" }}><FileText size={14} /></button>
                     <button onClick={() => sendWA(a.id)} title="WhatsApp" style={{ padding: "6px 8px", borderRadius: 8, border: "1px solid var(--border-default)", background: "#fff", color: "#059669" }}><MessageCircle size={14} /></button>
                     <button onClick={() => openNotes(a)} title="Catatan" style={{ padding: "6px 8px", borderRadius: 8, border: "1px solid var(--border-default)", background: "#fff", color: "#a8201a" }}><StickyNote size={14} /></button>
@@ -240,6 +259,69 @@ export const CVReviewView = ({ initialFilter = "all", initialQuery = "" }) => {
               <button onClick={() => setPsyFor(null)} style={{ padding: "8px 12px", borderRadius: 8, border: "1px solid var(--border-default)" }}>Batal</button>
               <button onClick={savePsyResult} style={{ padding: "8px 12px", borderRadius: 8, background: "#d97706", color: "#fff" }}>Simpan Hasil</button>
             </div>
+          </div>
+        </div>
+      )}
+      {detailFor && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 999, padding: 16 }} onClick={() => setDetailFor(null)}>
+          <div style={{ background: "var(--bg-surface)", borderRadius: 12, padding: 24, width: 640, maxWidth: "94vw", maxHeight: "86vh", overflowY: "auto" }} onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
+              <div>
+                <h3 style={{ fontWeight: 800, fontSize: "1.1rem" }}>{detailFor.name}</h3>
+                <div style={{ fontSize: 13, color: "var(--text-secondary)" }}>{detailFor.email} · {detailFor.wa || "-"}</div>
+                <div style={{ marginTop: 6 }}>{badge(detailFor.status, detailFor.score)}</div>
+              </div>
+              <button onClick={() => setDetailFor(null)} style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid var(--border-default)" }}>Tutup</button>
+            </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 16 }}>
+              <div style={{ padding: 12, background: "var(--bg-secondary)", borderRadius: 8 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text-secondary)", textTransform: "uppercase" }}>Handles</div>
+                <div style={{ fontSize: 13, marginTop: 4 }}>{detailFor.tiktok ? `TikTok: ${detailFor.tiktok}` : "TikTok: -"}</div>
+                <div style={{ fontSize: 13 }}>{detailFor.ig ? `IG: ${detailFor.ig}` : "IG: -"}</div>
+              </div>
+              <div style={{ padding: 12, background: "var(--bg-secondary)", borderRadius: 8 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text-secondary)", textTransform: "uppercase" }}>Ringkasan AI</div>
+                <div style={{ fontSize: 13, marginTop: 4 }}>{detailFor.ai_summary || "-"}</div>
+              </div>
+            </div>
+
+            {detailFor.notes && (
+              <div style={{ marginTop: 12, padding: 12, background: "#fdf6f6", borderRadius: 8, border: "1px solid #f0dcdc" }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: "#a8201a", textTransform: "uppercase" }}>Data Form Kandidat / Catatan</div>
+                <div style={{ fontSize: 13, whiteSpace: "pre-wrap", marginTop: 4 }}>{detailFor.notes}</div>
+              </div>
+            )}
+
+            <h4 style={{ fontWeight: 700, marginTop: 18, marginBottom: 8 }}>Riwayat Analisis AI ({detailAnalyses.length})</h4>
+            {detailLoading && <div style={{ fontSize: 13, color: "var(--text-secondary)" }}>Memuat…</div>}
+            {!detailLoading && detailAnalyses.length === 0 && <div style={{ fontSize: 13, color: "var(--text-secondary)" }}>Belum ada analisis tersimpan.</div>}
+            {detailAnalyses.map((an) => {
+              const parsed = parseJson(an.parsed);
+              const score = parseJson(an.score) || {};
+              return (
+                <div key={an.id} style={{ marginTop: 10, padding: 14, border: "1px solid var(--border-default)", borderRadius: 10 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
+                    <div style={{ fontSize: 12, color: "var(--text-secondary)" }}>{new Date(an.created_at).toLocaleString("id-ID")} · {an.model}</div>
+                    <div style={{ fontSize: 13, fontWeight: 700 }}>Skor {score.overall ?? "-"}</div>
+                  </div>
+                  {score.overall != null && (
+                    <div style={{ display: "flex", gap: 10, marginTop: 6, flexWrap: "wrap", fontSize: 12 }}>
+                      <span>Live: {score.liveExp ?? 0}/40</span>
+                      <span>Komunikasi: {score.komunikasi ?? 0}/25</span>
+                      <span>Availability: {score.availability ?? 0}/20</span>
+                      <span>Followers: {score.followersBonus ?? 0}/15</span>
+                      <span style={{ fontWeight: 700, color: an.decision === "verified" ? "#10b981" : an.decision === "review" ? "#f59e0b" : "#ef4444" }}>{an.decision}</span>
+                    </div>
+                  )}
+                  {parsed?.skills?.length > 0 && <div style={{ fontSize: 12, marginTop: 8 }}><b>Skills:</b> {parsed.skills.join(", ")}</div>}
+                  {parsed?.experiences?.length > 0 && <div style={{ fontSize: 12, marginTop: 4 }}><b>Pengalaman:</b> {parsed.experiences.join(" · ")}</div>}
+                  {(() => { const ms = parseJson(an.missing_skills); return ms?.length > 0 ? <div style={{ fontSize: 12, marginTop: 4, color: "#ef4444" }}><b>Missing:</b> {ms.join(", ")}</div> : null; })()}
+                  {(() => { const st = parseJson(an.strengths); return st?.length > 0 ? <div style={{ fontSize: 12, marginTop: 4, color: "#10b981" }}><b>Strengths:</b> {st.join(", ")}</div> : null; })()}
+                  {an.ai_summary && <div style={{ fontSize: 12, marginTop: 8, fontStyle: "italic" }}>{an.ai_summary}</div>}
+                </div>
+              );
+            })}
           </div>
         </div>
       )}
